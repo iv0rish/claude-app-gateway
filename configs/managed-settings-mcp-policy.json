@@ -1,0 +1,13 @@
+{
+  "allowManagedMcpServersOnly": true,
+  "allowedMcpServers": [
+    {
+      "serverUrl": "https://mcp-gateway.internal.example.com/*"
+    }
+  ],
+  "deniedMcpServers": [
+    {
+      "serverUrl": "https://*.untrusted.example.com/*"
+    }
+  ]
+}

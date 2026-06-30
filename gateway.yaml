@@ -1,32 +1,51 @@
 listen:
   host: 0.0.0.0
   port: 8080
-  # Required behind any TLS-terminating proxy. Used for the IdP
-  # redirect_uri and the discovery document.
+  # Must match the external HTTPS origin used by the ALB/Ingress.
   public_url: https://claude-gateway.internal.example.com
+  trusted_proxies:
+    - 10.0.0.0/8
 
 oidc:
-  issuer: https://login.example.com        # must serve /.well-known/openid-configuration
+  issuer: https://login.example.com
   client_id: 0oa1example2
   client_secret: ${OIDC_CLIENT_SECRET}
-  allowed_email_domains: [example.com]        # reject id_tokens outside your org
-  userinfo_fallback: true                  # for IdPs whose id_token omits email/groups; harmless otherwise
+  allowed_email_domains:
+    - example.com
+  userinfo_fallback: true
 
 session:
-  jwt_secret: ${GATEWAY_JWT_SECRET}        # openssl rand -base64 32
-  ttl_hours: 1                             # also bounds revocation latency on IdP deprovision
+  jwt_secret: ${GATEWAY_JWT_SECRET}
+  ttl_hours: 1
 
 store:
-  postgres_url: ${GATEWAY_POSTGRES_URL}    # add ?sslmode=require for managed Postgres
+  # Add ?sslmode=require for managed Postgres.
+  postgres_url: ${GATEWAY_POSTGRES_URL}
+  max_connections: 5
 
 upstreams:
-  - provider: bedrock
-    region: us-east-1
-    auth: {}                               # empty: AWS default credential chain
-                                           # (IRSA, EC2/ECS task role, env vars, ~/.aws)
+  - name: vllm-standard
+    provider: anthropic
+    auth:
+      api_key: ${VLLM_STANDARD_KEY}
+    base_url: http://llm-rate-limit-proxy.llm-gateway.svc.cluster.local:8080
 
-# Models are translated per upstream automatically. The built-in catalog
-# maps claude-opus-4-8 to us.anthropic.claude-opus-4-8 and so on for every
-# Bedrock-supported Claude model. Set false and add a `models:` list to
-# expose only specific models.
-auto_include_builtin_models: true
+auto_include_builtin_models: false
+models:
+  - id: claude-sonnet-4-6
+    label: Internal vLLM Sonnet
+    upstream_model:
+      vllm-standard: my-model
+
+managed:
+  policies:
+    - match: {}
+      cli:
+        availableModels:
+          - claude-sonnet-4-6
+        enforceAvailableModels: true
+        permissions:
+          deny:
+            - WebFetch
+        env:
+          DISABLE_UPDATES: "1"
