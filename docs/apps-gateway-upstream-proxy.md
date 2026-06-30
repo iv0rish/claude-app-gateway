@@ -1,6 +1,6 @@
 # Apps Gateway Upstream LLM Gateway 구현 가이드
 
-이 문서는 Claude Apps Gateway 뒤쪽에 배치할 `llm-gateway` 구현 기준을 정의한다. 기존 rate-limit proxy 책임에 Bedrock Guardrails 강제 적용을 합친 구조다.
+이 문서는 Claude Apps Gateway 뒤쪽에 배치할 `llm-gateway` 구현 기준을 정의한다. 기존 rate-limit proxy 책임에 Bedrock Guardrails 강제 적용을 합친 구조다. 기능별 상세 문서는 [llm-gateway/](./llm-gateway/)를 따른다.
 
 참고 문서:
 
