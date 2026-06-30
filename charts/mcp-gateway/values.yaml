@@ -1,0 +1,108 @@
+replicaCount: 2
+
+namespace:
+  create: true
+  name: llm-gateway
+
+image:
+  repository: "123456789012.dkr.ecr.us-east-1.amazonaws.com/mcp-gateway"
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+  hosts:
+    - host: mcp-gateway.internal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+extraEnv: []
+extraEnvFrom: []
+
+config:
+  publicUrl: https://mcp-gateway.internal.example.com
+  oidcIssuer: https://login.example.com
+  oidcAudience: mcp-gateway
+  oidcJwksUrl: ""
+  allowedEmailDomains:
+    - example.com
+  allowedGroups: []
+  groupsClaim: groups
+  rateLimitWindowMs: 60000
+  rateLimitMax: 60
+  toolPolicies: []
+  upstreams:
+    - name: example
+      url: http://example-mcp.llm-gateway.svc.cluster.local:8080/mcp
+
+secrets:
+  create: true
+  name: ""
+  stringData:
+    MCP_GATEWAY_OAUTH_CLIENT_SECRET: "replace-me"
+
+networkPolicy:
+  enabled: true
+  ingress:
+    from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
+    ports:
+      - port: 8080
+        protocol: TCP
+  egress:
+    dns:
+      enabled: true
+      namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    extra: []
