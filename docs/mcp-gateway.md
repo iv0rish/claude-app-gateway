@@ -50,7 +50,42 @@ Claude Apps Gateway session token은 MCP Gateway 인증에 재사용하지 않�
 - `email`, `groups`, `sub` claim을 추출해 tool 권한과 audit identity로 사용한다.
 - 내부 MCP server catalog를 aggregation하거나 tool별 upstream MCP server로 라우팅한다.
 - tool allow/deny, group별 policy, tool call rate limit, audit log를 적용한다.
+- HTTP/MCP 요청, 인증 실패, tool allow/deny/rate-limit 결정을 structured log와 metrics로 노출한다.
 - 외부 SaaS나 내부 API credential은 사용자 토큰과 별도의 server-side credential broker로 관리한다.
+
+## Logging and Metrics
+
+MCP Gateway는 Claude Apps Gateway 운영 수준에 맞춰 structured log와 Prometheus 형식 metrics를 제공한다.
+
+Logging 기준:
+
+- Fastify/Pino JSON log를 사용한다.
+- `LOG_LEVEL`로 verbosity를 조정한다. 기본값은 `info`다.
+- security-relevant event는 `audit: true` 필드와 함께 별도 audit event로 남긴다.
+- audit event에는 가능한 경우 `sub`, `email`, `groups`, `server`, `tool`, `decision`, `latencyMs`, `statusCode`를 포함한다.
+
+Audit event 예시:
+
+| Event | 의미 |
+| --- | --- |
+| `auth.denied` | MCP 요청 인증 실패 |
+| `rpc.invalid` | JSON-RPC request shape 오류 |
+| `rpc.method_not_found` | 지원하지 않는 MCP method 요청 |
+| `tool.allowed` | tool 호출 허용 |
+| `tool.denied` | policy로 tool 호출 차단 |
+| `tool.rate_limited` | rate limit으로 tool 호출 차단 |
+
+Metrics 기준:
+
+- `/metrics`에서 Prometheus text format을 제공한다.
+- `METRICS_ENABLED=false`로 endpoint를 비활성화할 수 있다.
+- 기본 metrics:
+  - `mcp_gateway_http_requests_total`
+  - `mcp_gateway_http_request_duration_seconds`
+  - `mcp_gateway_auth_denied_total`
+  - `mcp_gateway_rpc_requests_total`
+  - `mcp_gateway_tool_calls_total`
+  - `mcp_gateway_tool_call_duration_seconds`
 
 ## IdP 설정
 
@@ -140,6 +175,8 @@ NetworkPolicy 기준:
   - 필요 시 audit/OTLP collector
   - Kubernetes DNS
 
+Metrics scraping이 필요하면 Prometheus 또는 collector가 MCP Gateway의 `/metrics` endpoint에 접근할 수 있도록 ingress 또는 pod scraping 정책을 별도로 연다.
+
 ## 운영 확인 절차
 
 1. MCP Gateway Pod가 시작되는지 확인한다.
@@ -154,11 +191,19 @@ NetworkPolicy 기준:
    curl -i https://mcp-gateway.internal.example.com/mcp
    ```
 
-3. 개발자 머신에서 `managed-mcp.json` 배포 후 `claude mcp list`에 `company` server만 보이는지 확인한다.
+3. Metrics endpoint가 Prometheus text format으로 응답하는지 확인한다.
 
-4. Claude Code의 `/mcp` 또는 `claude mcp login company`로 MCP Gateway OIDC login을 완료하고, IdP 재인증 없이 SSO로 승인되는지 확인한다.
+   ```sh
+   curl -fsS https://mcp-gateway.internal.example.com/metrics
+   ```
 
-5. 허용된 MCP tool 호출은 성공하고, 차단된 tool 또는 외부 MCP server 추가는 enterprise policy로 거부되는지 확인한다.
+4. 개발자 머신에서 `managed-mcp.json` 배포 후 `claude mcp list`에 `company` server만 보이는지 확인한다.
+
+5. Claude Code의 `/mcp` 또는 `claude mcp login company`로 MCP Gateway OIDC login을 완료하고, IdP 재인증 없이 SSO로 승인되는지 확인한다.
+
+6. 허용된 MCP tool 호출은 성공하고, 차단된 tool 또는 외부 MCP server 추가는 enterprise policy로 거부되는지 확인한다.
+
+7. tool 호출 후 audit log와 metrics counter가 증가하는지 확인한다.
 
 ## 장애 대응 기준
 
@@ -169,6 +214,7 @@ NetworkPolicy 기준:
 | 외부 MCP server 추가 가능 | `allowManagedMcpServersOnly`, `allowedMcpServers`, admin-controlled tier 배포 여부 |
 | tool 호출 403 | user/group claim, tool allow/deny policy, upstream credential mapping |
 | tool 호출 timeout | MCP Gateway idle timeout, upstream MCP server 상태, NetworkPolicy egress |
+| metrics 미수집 | `METRICS_ENABLED`, `/metrics` reachability, Prometheus scrape policy, NetworkPolicy ingress |
 
 ## 수용 기준
 
@@ -177,4 +223,4 @@ NetworkPolicy 기준:
 - 허용되지 않은 MCP server는 enterprise policy로 차단된다.
 - 허용된 MCP tool 호출은 내부 MCP upstream으로 라우팅된다.
 - MCP tool 호출은 MCP Gateway audit log에 사용자 identity와 tool name을 남긴다.
-
+- MCP Gateway `/metrics`는 HTTP, auth, RPC, tool-call metrics를 제공한다.

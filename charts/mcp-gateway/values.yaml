@@ -71,6 +71,8 @@ config:
     - example.com
   allowedGroups: []
   groupsClaim: groups
+  logLevel: info
+  metricsEnabled: true
   rateLimitWindowMs: 60000
   rateLimitMax: 60
   toolPolicies: []

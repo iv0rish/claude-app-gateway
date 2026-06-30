@@ -7,6 +7,7 @@ import type { AuthService } from "../src/auth/oidc.js";
 import type { PolicyEngine } from "../src/policy/engine.js";
 import type { RateLimiter } from "../src/rate-limit/memory.js";
 import type { AuthenticatedPrincipal } from "../src/types.js";
+import { createMetricsRegistry } from "../src/metrics/registry.js";
 
 const principal: AuthenticatedPrincipal = {
   sub: "user-1",
@@ -39,6 +40,7 @@ function buildTestApp() {
     policy,
     limiter,
     upstreams: createUpstreamRegistry(config),
+    metrics: createMetricsRegistry(),
   });
 
   return { app, policy, limiter };

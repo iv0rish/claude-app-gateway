@@ -6,12 +6,14 @@ import { createMcpRouter } from "./mcp/router.js";
 import { createPolicyEngine } from "./policy/engine.js";
 import { createRateLimiter } from "./rate-limit/memory.js";
 import { createUpstreamRegistry } from "./upstreams/registry.js";
+import { createMetricsRegistry, httpDurationBuckets } from "./metrics/registry.js";
 
 export async function buildServer() {
   const config = loadConfig();
+  const metrics = createMetricsRegistry();
   const app = Fastify({
     logger: {
-      level: process.env.LOG_LEVEL ?? "info",
+      level: config.logLevel,
     },
   });
 
@@ -24,11 +26,45 @@ export async function buildServer() {
   const limiter = createRateLimiter(config);
   const upstreams = createUpstreamRegistry(config);
 
+  app.addHook("onRequest", async (request) => {
+    request.metricsStartedAt = Date.now();
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    if (!config.metricsEnabled) return;
+    const route = request.routeOptions.url ?? request.url;
+    const durationSeconds = (Date.now() - (request.metricsStartedAt ?? Date.now())) / 1000;
+    metrics.increment("mcp_gateway_http_requests_total", "Total HTTP requests", {
+      method: request.method,
+      route,
+      status: reply.statusCode,
+    });
+    metrics.observe(
+      "mcp_gateway_http_request_duration_seconds",
+      "HTTP request duration in seconds",
+      httpDurationBuckets,
+      {
+        method: request.method,
+        route,
+        status: reply.statusCode,
+      },
+      durationSeconds,
+    );
+  });
+
   app.get("/healthz", async () => ({ ok: true }));
   app.get("/readyz", async () => ({
     ok: true,
     upstreams: upstreams.list().map((upstream) => upstream.name),
   }));
+  app.get("/metrics", async (_request, reply) => {
+    if (!config.metricsEnabled) {
+      reply.code(404);
+      return { error: "metrics disabled" };
+    }
+    reply.type("text/plain; version=0.0.4; charset=utf-8");
+    return metrics.render();
+  });
 
   app.register(createMcpRouter, {
     prefix: "/mcp",
@@ -36,6 +72,7 @@ export async function buildServer() {
     policy,
     limiter,
     upstreams,
+    metrics,
   });
 
   return { app, config };
@@ -57,4 +94,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     port: config.port,
   });
 }
-

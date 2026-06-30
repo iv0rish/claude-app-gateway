@@ -5,12 +5,15 @@ import type { PolicyEngine } from "../policy/engine.js";
 import type { RateLimiter } from "../rate-limit/memory.js";
 import type { UpstreamRegistry } from "../upstreams/registry.js";
 import type { McpInitializeParams, McpToolCallParams } from "../upstreams/registry.js";
+import type { MetricsRegistry } from "../metrics/registry.js";
+import { mcpToolDurationBuckets } from "../metrics/registry.js";
 
 type McpRouterOptions = {
   auth: AuthService;
   policy: PolicyEngine;
   limiter: RateLimiter;
   upstreams: UpstreamRegistry;
+  metrics: MetricsRegistry;
 };
 
 type JsonRpcRequest = {
@@ -101,8 +104,19 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
     try {
       request.principal = await options.auth.authenticate(request);
     } catch (error) {
+      const statusCode = error instanceof AuthError ? error.status : 401;
+      options.metrics.increment("mcp_gateway_auth_denied_total", "Total denied authentication attempts", {
+        status: statusCode,
+      });
+      writeAudit(request.log, {
+        event: "auth.denied",
+        method: request.method,
+        path: request.url,
+        statusCode,
+        decision: error instanceof Error ? error.message : "authentication failed",
+      });
       reply.header("WWW-Authenticate", options.auth.challenge());
-      reply.code(error instanceof AuthError ? error.status : 401);
+      reply.code(statusCode);
       throw error;
     }
   });
@@ -114,6 +128,19 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
 
     if (!body) {
       reply.code(400);
+      options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+        method: "invalid",
+        status: "invalid_request",
+      });
+      writeAudit(request.log, {
+        event: "rpc.invalid",
+        principal,
+        method: request.method,
+        path: request.url,
+        statusCode: 400,
+        decision: "invalid-request",
+        latencyMs: Date.now() - startedAt,
+      });
       return rpcError(requestId(request.body), -32600, "Invalid Request");
     }
 
@@ -123,13 +150,25 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
       const params = parseInitializeParams(body.params);
       if (body.params !== undefined && !params) {
         reply.code(400);
+        options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+          method: body.method,
+          status: "invalid_params",
+        });
         return rpcError(body.id, -32602, "Invalid params");
       }
 
+      options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+        method: body.method,
+        status: "ok",
+      });
       return rpcResult(body.id, await upstream.initialize(params));
     }
 
     if (body.method === "tools/list") {
+      options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+        method: body.method,
+        status: "ok",
+      });
       return rpcResult(body.id, await upstream.listTools());
     }
 
@@ -137,15 +176,25 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
       const params = parseToolCallParams(body.params);
       if (!params) {
         reply.code(400);
+        options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+          method: body.method,
+          status: "invalid_params",
+        });
         return rpcError(body.id, -32602, "Invalid params");
       }
 
       const tool = params.name;
       const decision = options.policy.canCallTool(principal, upstream.name, tool);
       if (!decision.allowed) {
+        options.metrics.increment("mcp_gateway_tool_calls_total", "Total MCP tool calls", {
+          server: upstream.name,
+          tool,
+          decision: "denied",
+        });
         writeAudit(request.log, {
           event: "tool.denied",
           principal,
+          rpcMethod: body.method,
           server: upstream.name,
           tool,
           decision: decision.reason,
@@ -157,9 +206,15 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
 
       const limit = await options.limiter.check(principal, `${upstream.name}:${tool}`);
       if (!limit.allowed) {
+        options.metrics.increment("mcp_gateway_tool_calls_total", "Total MCP tool calls", {
+          server: upstream.name,
+          tool,
+          decision: "rate_limited",
+        });
         writeAudit(request.log, {
           event: "tool.rate_limited",
           principal,
+          rpcMethod: body.method,
           server: upstream.name,
           tool,
           decision: "rate-limit",
@@ -172,15 +227,51 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
       writeAudit(request.log, {
         event: "tool.allowed",
         principal,
+        rpcMethod: body.method,
         server: upstream.name,
         tool,
         decision: "allowed",
         latencyMs: Date.now() - startedAt,
       });
 
-      return rpcResult(body.id, await upstream.callTool(params));
+      const result = await upstream.callTool(params);
+      const latencySeconds = (Date.now() - startedAt) / 1000;
+      options.metrics.increment("mcp_gateway_tool_calls_total", "Total MCP tool calls", {
+        server: upstream.name,
+        tool,
+        decision: "allowed",
+      });
+      options.metrics.observe(
+        "mcp_gateway_tool_call_duration_seconds",
+        "MCP tool call duration in seconds",
+        mcpToolDurationBuckets,
+        {
+          server: upstream.name,
+          tool,
+          decision: "allowed",
+        },
+        latencySeconds,
+      );
+      options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+        method: body.method,
+        status: "ok",
+      });
+
+      return rpcResult(body.id, result);
     }
 
+    options.metrics.increment("mcp_gateway_rpc_requests_total", "Total MCP JSON-RPC requests", {
+      method: body.method,
+      status: "method_not_found",
+    });
+    writeAudit(request.log, {
+      event: "rpc.method_not_found",
+      principal,
+      rpcMethod: body.method,
+      statusCode: 200,
+      decision: "method-not-found",
+      latencyMs: Date.now() - startedAt,
+    });
     return rpcError(body.id, -32601, "Method not found");
   });
 };

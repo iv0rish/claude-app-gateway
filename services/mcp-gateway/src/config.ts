@@ -12,6 +12,15 @@ const csv = z
       : [],
   );
 
+const envBoolean = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .transform((value) => {
+    if (typeof value === "boolean") return value;
+    if (value === undefined || value === "") return true;
+    return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+  });
+
 const upstreamSchema = z.object({
   name: z.string().min(1),
   url: z.string().url(),
@@ -90,6 +99,8 @@ const configSchema = z.object({
   allowedGroups: csv,
   groupsClaim: z.string().default("groups"),
   redisUrl: z.string().url().optional(),
+  logLevel: z.string().default("info"),
+  metricsEnabled: envBoolean.default(true),
   rateLimitWindowMs: z.coerce.number().int().positive().default(60_000),
   rateLimitMax: z.coerce.number().int().positive().default(60),
   toolPolicies,
@@ -134,6 +145,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     allowedGroups: env.ALLOWED_GROUPS,
     groupsClaim: env.GROUPS_CLAIM,
     redisUrl: env.REDIS_URL,
+    logLevel: env.LOG_LEVEL,
+    metricsEnabled: env.METRICS_ENABLED,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
     rateLimitMax: env.RATE_LIMIT_MAX,
     toolPolicies: env.MCP_TOOL_POLICIES,
