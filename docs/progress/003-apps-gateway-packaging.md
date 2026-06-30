@@ -12,11 +12,10 @@ Completed.
   - Secret placeholders
   - Deployment, Service, Ingress, ServiceAccount, optional Namespace
   - NetworkPolicy for ingress and constrained egress
-- Chart defaults point the Apps Gateway upstream at `llm-rate-limit-proxy`.
+- Chart defaults point the Apps Gateway upstream at the internal policy proxy. This was later renamed from `llm-rate-limit-proxy` to `llm-policy-proxy`.
 
 ## Validation
 
 - Worker validation reported:
   - `helm lint charts/apps-gateway`
   - `helm template test charts/apps-gateway --namespace llm-gateway`
-

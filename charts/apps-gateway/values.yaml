@@ -122,7 +122,7 @@ gatewayConfig: |
       provider: anthropic
       auth:
         api_key: ${VLLM_STANDARD_KEY}
-      base_url: http://llm-rate-limit-proxy.llm-gateway.svc.cluster.local:8080
+      base_url: http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080
 
   auto_include_builtin_models: false
   models:
@@ -165,14 +165,14 @@ networkPolicy:
           protocol: UDP
         - port: 53
           protocol: TCP
-    rateLimitProxy:
+    policyProxy:
       enabled: true
       namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: llm-gateway
       podSelector:
         matchLabels:
-          app: llm-rate-limit-proxy
+          app: llm-policy-proxy
       ports:
         - port: 8080
           protocol: TCP
