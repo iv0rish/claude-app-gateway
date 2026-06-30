@@ -21,10 +21,48 @@ const envBoolean = z
     return ["1", "true", "yes", "on"].includes(value.toLowerCase());
   });
 
+const headerNameSchema = z
+  .string()
+  .min(1)
+  .regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/, "header name must be an RFC 9110 token")
+  .transform((value) => value.toLowerCase());
+
+const blockedForwardHeaderNames = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "proxy-authorization",
+  "connection",
+  "content-length",
+  "host",
+  "keep-alive",
+  "proxy-authenticate",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+const forwardHeadersSchema = z
+  .array(headerNameSchema)
+  .default([])
+  .superRefine((headers, ctx) => {
+    for (const header of headers) {
+      if (blockedForwardHeaderNames.has(header)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `header "${header}" cannot be forwarded`,
+        });
+      }
+    }
+  })
+  .transform((headers) => Array.from(new Set(headers)));
+
 const upstreamSchema = z.object({
   name: z.string().min(1),
   url: z.string().url(),
   token: z.string().optional(),
+  forwardHeaders: forwardHeadersSchema,
 });
 
 const toolPolicyMatchSchema = z

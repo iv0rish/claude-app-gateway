@@ -26,7 +26,7 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     groupsClaim: "groups",
     rateLimitWindowMs: 60_000,
     rateLimitMax: 60,
-    upstreams: [{ name: "example", url: "http://127.0.0.1:9090/mcp" }],
+    upstreams: [{ name: "example", url: "http://127.0.0.1:9090/mcp", forwardHeaders: [] }],
     ...overrides,
   };
 }

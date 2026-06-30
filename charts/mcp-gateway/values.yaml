@@ -79,6 +79,7 @@ config:
   upstreams:
     - name: example
       url: http://example-mcp.llm-gateway.svc.cluster.local:8080/mcp
+      forwardHeaders: []
 
 secrets:
   create: true

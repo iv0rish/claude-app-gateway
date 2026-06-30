@@ -113,12 +113,40 @@ GROUPS_CLAIM=groups
   {
     "name": "internal",
     "url": "http://internal-mcp.default.svc.cluster.local:8080/mcp",
-    "token": "optional-upstream-token"
+    "token": "optional-upstream-token",
+    "forwardHeaders": ["x-tenant-id", "x-trace-id"]
   }
 ]
 ```
 
-현재 구현은 `name`을 기준으로 in-process example upstream을 등록한다. `url`과 `token`을 사용한 실제 remote MCP proxy는 아직 구현되어 있지 않다.
+| 필드 | 필수 | 설명 |
+| --- | --- | --- |
+| `name` | 예 | Gateway 내부 upstream 이름 |
+| `url` | 예 | remote HTTP MCP endpoint |
+| `token` | 아니오 | upstream 호출용 bearer token |
+| `forwardHeaders` | 아니오 | client 요청에서 upstream으로 전달할 custom header allowlist |
+
+Gateway는 `initialize`, `tools/list`, `tools/call` 요청을 `url`에 JSON-RPC POST로 전달한다. `token`이 있으면 outbound 요청에 `Authorization: Bearer <token>`을 붙인다.
+
+`forwardHeaders`는 명시된 header만 전달한다. Header 이름은 소문자로 정규화되며 중복은 제거된다.
+
+전달할 수 없는 header:
+
+- `authorization`
+- `cookie`
+- `set-cookie`
+- `proxy-authorization`
+- `connection`
+- `content-length`
+- `host`
+- `keep-alive`
+- `proxy-authenticate`
+- `te`
+- `trailer`
+- `transfer-encoding`
+- `upgrade`
+
+위 header를 `forwardHeaders`에 넣으면 Gateway가 설정 로딩 단계에서 실패한다. 사용자 bearer token이나 cookie를 upstream에 그대로 전달하지 않기 위한 제한이다.
 
 ## Helm values 매핑
 
@@ -144,5 +172,7 @@ config:
   upstreams:
     - name: internal
       url: http://internal-mcp.default.svc.cluster.local:8080/mcp
+      forwardHeaders:
+        - x-tenant-id
+        - x-trace-id
 ```
-

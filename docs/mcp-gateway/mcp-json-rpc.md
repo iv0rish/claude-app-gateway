@@ -59,7 +59,7 @@ MCP client 초기화 요청을 처리한다. 현재 구현은 등록된 첫 upst
 
 ### tools/list
 
-등록된 upstream의 tool 목록을 반환한다. 현재 example upstream은 `example.echo` tool 하나를 제공한다.
+등록된 upstream의 tool 목록을 반환한다. Gateway는 remote upstream의 `tools/list` 응답을 그대로 JSON-RPC `result`로 반환한다.
 
 응답 예시:
 
@@ -147,4 +147,3 @@ policy deny와 rate limit은 JSON-RPC error로도 표현하고 HTTP status도 �
 - tool 허용: `tool.allowed`, `mcp_gateway_tool_calls_total{decision="allowed"}`.
 - tool 차단: `tool.denied`, `mcp_gateway_tool_calls_total{decision="denied"}`.
 - rate-limit 차단: `tool.rate_limited`, `mcp_gateway_tool_calls_total{decision="rate_limited"}`.
-

@@ -1,5 +1,5 @@
 import type { AppConfig } from "../config.js";
-import type { McpUpstream } from "../types.js";
+import type { McpUpstream, RequestContext } from "../types.js";
 
 export type McpTool = {
   name: string;
@@ -36,9 +36,9 @@ export type McpInitializeResult = {
 };
 
 export type RegisteredUpstream = McpUpstream & {
-  initialize(params?: McpInitializeParams): Promise<McpInitializeResult>;
-  listTools(): Promise<{ tools: McpTool[] }>;
-  callTool(params: McpToolCallParams): Promise<McpToolCallResult>;
+  initialize(params: McpInitializeParams | undefined, context: RequestContext): Promise<McpInitializeResult>;
+  listTools(context: RequestContext): Promise<{ tools: McpTool[] }>;
+  callTool(params: McpToolCallParams, context: RequestContext): Promise<McpToolCallResult>;
 };
 
 export type UpstreamRegistry = {
@@ -47,53 +47,100 @@ export type UpstreamRegistry = {
   get(name: string): RegisteredUpstream | undefined;
 };
 
-function createExampleUpstream(upstream: McpUpstream): RegisteredUpstream {
+type JsonRpcResponse<T> = {
+  jsonrpc: "2.0";
+  id: string;
+  result?: T;
+  error?: {
+    code: number;
+    message: string;
+  };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function collectForwardedHeaders(upstream: McpUpstream, context: RequestContext) {
+  const headers: Record<string, string> = {
+    accept: "application/json",
+    "content-type": "application/json",
+  };
+
+  if (upstream.token) {
+    headers.authorization = `Bearer ${upstream.token}`;
+  }
+
+  for (const headerName of upstream.forwardHeaders) {
+    const value = context.request.headers[headerName];
+    if (typeof value === "string") {
+      headers[headerName] = value;
+    } else if (Array.isArray(value) && value.length > 0) {
+      headers[headerName] = value.join(", ");
+    }
+  }
+
+  return headers;
+}
+
+function assertJsonRpcResult<T>(payload: unknown): T {
+  if (!isRecord(payload) || payload.jsonrpc !== "2.0") {
+    throw new Error("upstream returned an invalid JSON-RPC response");
+  }
+
+  if (isRecord(payload.error)) {
+    const message = typeof payload.error.message === "string" ? payload.error.message : "upstream error";
+    throw new Error(message);
+  }
+
+  if (!("result" in payload)) {
+    throw new Error("upstream JSON-RPC response is missing result");
+  }
+
+  return payload.result as T;
+}
+
+function createHttpUpstream(upstream: McpUpstream): RegisteredUpstream {
+  async function postRpc<T>(method: string, params: unknown, context: RequestContext): Promise<T> {
+    const body: Record<string, unknown> = {
+      jsonrpc: "2.0",
+      id: `${upstream.name}:${method}`,
+      method,
+    };
+    if (params !== undefined) {
+      body.params = params;
+    }
+
+    const response = await fetch(upstream.url, {
+      method: "POST",
+      headers: collectForwardedHeaders(upstream, context),
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`upstream ${upstream.name} returned HTTP ${response.status}`);
+    }
+
+    const payload = (await response.json()) as JsonRpcResponse<T>;
+    return assertJsonRpcResult<T>(payload);
+  }
+
   return {
     ...upstream,
-    async initialize(params) {
-      return {
-        protocolVersion: params?.protocolVersion ?? "2024-11-05",
-        capabilities: {
-          tools: {},
-        },
-        serverInfo: {
-          name: upstream.name,
-          version: "0.1.0",
-        },
-      };
+    initialize(params, context) {
+      return postRpc<McpInitializeResult>("initialize", params, context);
     },
-    async listTools() {
-      return {
-        tools: [
-          {
-            name: "example.echo",
-            description: "Echo input through the example MCP gateway tool",
-            inputSchema: {
-              type: "object",
-              properties: {
-                text: { type: "string" },
-              },
-              required: ["text"],
-            },
-          },
-        ],
-      };
+    listTools(context) {
+      return postRpc<{ tools: McpTool[] }>("tools/list", undefined, context);
     },
-    async callTool(params) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: String(params.arguments?.text ?? ""),
-          },
-        ],
-      };
+    callTool(params, context) {
+      return postRpc<McpToolCallResult>("tools/call", params, context);
     },
   };
 }
 
 export function createUpstreamRegistry(config: AppConfig): UpstreamRegistry {
-  const upstreams = config.upstreams.map(createExampleUpstream);
+  const upstreams = config.upstreams.map(createHttpUpstream);
 
   return {
     list() {

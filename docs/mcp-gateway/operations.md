@@ -132,7 +132,7 @@ Claude Code에는 remote HTTP MCP server로 Gateway를 등록한다.
 | 인증은 되지만 403 발생 | `ALLOWED_GROUPS`, `GROUPS_CLAIM`, `MCP_TOOL_POLICIES` |
 | tool call이 429로 실패 | `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, 사용자별 호출량 |
 | metrics가 수집되지 않음 | `METRICS_ENABLED`, ServiceMonitor/scrape config, NetworkPolicy |
-| upstream 호출이 기대와 다름 | 현재 구현은 실제 remote proxy가 아니라 example upstream임 |
+| upstream 호출이 기대와 다름 | `MCP_UPSTREAMS[].url`, upstream 응답 JSON-RPC shape, NetworkPolicy egress, forwarded header allowlist |
 
 ## 운영 수용 기준
 
@@ -142,4 +142,3 @@ Claude Code에는 remote HTTP MCP server로 Gateway를 등록한다.
 - tool 호출은 policy와 rate limit을 통과해야 한다.
 - 보안상 의미 있는 결정은 audit log로 남는다.
 - Prometheus에서 HTTP, auth, RPC, tool-call metric을 수집할 수 있다.
-

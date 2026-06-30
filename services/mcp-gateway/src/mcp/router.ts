@@ -145,6 +145,10 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
     }
 
     const upstream = options.upstreams.first();
+    const context = {
+      request,
+      principal,
+    };
 
     if (body.method === "initialize") {
       const params = parseInitializeParams(body.params);
@@ -161,7 +165,7 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
         method: body.method,
         status: "ok",
       });
-      return rpcResult(body.id, await upstream.initialize(params));
+      return rpcResult(body.id, await upstream.initialize(params, context));
     }
 
     if (body.method === "tools/list") {
@@ -169,7 +173,7 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
         method: body.method,
         status: "ok",
       });
-      return rpcResult(body.id, await upstream.listTools());
+      return rpcResult(body.id, await upstream.listTools(context));
     }
 
     if (body.method === "tools/call") {
@@ -234,7 +238,7 @@ export const createMcpRouter: FastifyPluginAsync<McpRouterOptions> = async (app,
         latencyMs: Date.now() - startedAt,
       });
 
-      const result = await upstream.callTool(params);
+      const result = await upstream.callTool(params, context);
       const latencySeconds = (Date.now() - startedAt) / 1000;
       options.metrics.increment("mcp_gateway_tool_calls_total", "Total MCP tool calls", {
         server: upstream.name,

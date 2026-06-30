@@ -36,7 +36,7 @@ Claude Apps Gateway session token은 MCP Gateway 인증에 재사용하지 않�
 | [rate-limiting.md](./rate-limiting.md) | tool call rate limit, store interface, Redis 확장 지점 |
 | [audit-logging.md](./audit-logging.md) | audit event, structured log 필드, 운영 활용 |
 | [metrics.md](./metrics.md) | Prometheus endpoint와 metric 목록 |
-| [upstreams.md](./upstreams.md) | upstream registry, 현재 example upstream, 실제 proxy 확장 계획 |
+| [upstreams.md](./upstreams.md) | upstream registry, remote MCP proxy, custom header forwarding |
 | [operations.md](./operations.md) | EKS 배포, Claude Code managed MCP 배포, 점검 절차 |
 
 ## 현재 구현된 기능
@@ -45,6 +45,8 @@ Claude Apps Gateway session token은 MCP Gateway 인증에 재사용하지 않�
 - OIDC bearer token 검증.
 - email domain, group claim 기반 접근 제한.
 - MCP JSON-RPC endpoint: `initialize`, `tools/list`, `tools/call`.
+- Remote HTTP MCP upstream proxy.
+- Upstream별 custom header forwarding allowlist.
 - tool policy engine: group, server, tool pattern 기반 allow/deny.
 - in-memory tool call rate limit.
 - audit log.
@@ -53,9 +55,7 @@ Claude Apps Gateway session token은 MCP Gateway 인증에 재사용하지 않�
 
 ## 현재 구현 범위의 한계
 
-- `MCP_UPSTREAMS[].url` 설정은 존재하지만, 현재 코드는 실제 remote MCP server로 HTTP proxy하지 않고 in-process example upstream을 등록한다.
 - `REDIS_URL` 설정과 rate-limit store interface는 준비되어 있지만 Redis store 구현은 아직 없다.
 - JWKS URL은 `OIDC_JWKS_URL`이 있으면 그 값을 사용하고, 없으면 issuer 기준 `/.well-known/jwks.json`으로 계산한다. OIDC discovery document를 가져와 `jwks_uri`를 해석하는 기능은 아직 없다.
 - 인증 실패 challenge는 OAuth protected resource metadata URL을 포함하지만, 해당 metadata endpoint 자체는 아직 구현되어 있지 않다.
 - metric registry는 process-local이다. Pod 재시작 시 counter와 histogram 상태는 초기화된다.
-

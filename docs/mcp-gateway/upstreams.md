@@ -11,7 +11,8 @@ MCP Gateway는 내부 MCP server를 upstream으로 등록하고, Claude Code에�
   {
     "name": "internal",
     "url": "http://internal-mcp.default.svc.cluster.local:8080/mcp",
-    "token": "optional-upstream-token"
+    "token": "optional-upstream-token",
+    "forwardHeaders": ["x-tenant-id", "x-trace-id"]
   }
 ]
 ```
@@ -21,33 +22,96 @@ MCP Gateway는 내부 MCP server를 upstream으로 등록하고, Claude Code에�
 | `name` | Gateway 내부 server 이름 |
 | `url` | remote MCP endpoint URL |
 | `token` | upstream 호출에 사용할 optional credential |
+| `forwardHeaders` | client 요청에서 upstream으로 전달할 custom header allowlist |
 
 ## 현재 구현
 
-현재 코드는 `RegisteredUpstream` abstraction을 두고, 설정된 upstream마다 example upstream을 만든다.
+현재 코드는 `RegisteredUpstream` abstraction을 두고, 설정된 upstream마다 HTTP MCP upstream을 만든다. Gateway는 다음 JSON-RPC method를 upstream `url`로 POST한다.
 
-Example upstream 동작:
+- `initialize`
+- `tools/list`
+- `tools/call`
 
-- `initialize`: client가 보낸 `protocolVersion` 또는 기본값 `2024-11-05`를 반환한다.
-- `tools/list`: `example.echo` tool 하나를 반환한다.
-- `tools/call`: `arguments.text` 값을 text content로 echo한다.
+Outbound 요청에는 기본적으로 다음 header가 들어간다.
 
-이 구현은 gateway의 인증, policy, rate-limit, logging, metrics 흐름을 검증하기 위한 scaffold다.
+```http
+Accept: application/json
+Content-Type: application/json
+```
+
+`token`이 설정된 upstream은 다음 header를 추가한다.
+
+```http
+Authorization: Bearer <token>
+```
+
+## Custom header forwarding
+
+`forwardHeaders`에 지정된 incoming request header는 upstream으로 전달된다.
+
+예시:
+
+```json
+[
+  {
+    "name": "internal",
+    "url": "http://internal-mcp.default.svc.cluster.local:8080/mcp",
+    "forwardHeaders": ["x-tenant-id", "x-request-id", "x-trace-id"]
+  }
+]
+```
+
+Client 요청:
+
+```http
+POST /mcp
+Authorization: Bearer <user-access-token>
+X-Tenant-Id: tenant-a
+X-Trace-Id: trace-123
+X-Not-Forwarded: ignored
+```
+
+Upstream 요청:
+
+```http
+POST /mcp
+Accept: application/json
+Content-Type: application/json
+X-Tenant-Id: tenant-a
+X-Trace-Id: trace-123
+```
+
+`X-Not-Forwarded`는 allowlist에 없으므로 전달되지 않는다.
+
+Header forwarding은 custom metadata 전달 용도다. 사용자 credential 전달 용도로 사용하지 않는다. 다음 header는 설정 로딩 단계에서 거부된다.
+
+- `authorization`
+- `cookie`
+- `set-cookie`
+- `proxy-authorization`
+- `connection`
+- `content-length`
+- `host`
+- `keep-alive`
+- `proxy-authenticate`
+- `te`
+- `trailer`
+- `transfer-encoding`
+- `upgrade`
 
 ## 아직 구현되지 않은 부분
 
 다음 기능은 아직 구현되지 않았다.
 
-- `MCP_UPSTREAMS[].url`로 실제 HTTP request를 보내는 remote MCP proxy.
-- upstream별 bearer token 또는 mTLS credential 주입.
 - 여러 upstream의 tool catalog aggregation.
 - tool name collision 처리.
 - upstream timeout, retry, circuit breaker.
 - upstream health check.
+- mTLS credential 주입.
 
-## Remote proxy 구현 방향
+## Remote proxy 흐름
 
-실제 upstream proxy를 추가할 때는 다음 구조를 권장한다.
+현재 remote proxy는 다음 순서로 동작한다.
 
 ```text
 MCP request
@@ -63,14 +127,14 @@ MCP request
 구현 단위:
 
 1. `RegisteredUpstream` interface를 유지한다.
-2. `HttpMcpUpstream` 구현체를 추가한다.
-3. `url`이 있는 upstream은 `HttpMcpUpstream`으로 등록한다.
-4. upstream token은 outbound `Authorization` header로만 사용하고 log에 남기지 않는다.
-5. upstream 응답의 JSON-RPC error는 client에 전달하되, Gateway metric에는 `decision="error"` 또는 RPC status를 기록한다.
+2. 설정된 upstream은 HTTP MCP upstream으로 등록한다.
+3. upstream token은 outbound `Authorization` header로만 사용하고 log에 남기지 않는다.
+4. allowlist된 custom header만 outbound 요청에 복사한다.
+5. upstream 응답의 JSON-RPC `result`를 Gateway client 응답의 `result`로 반환한다.
 
 ## Tool routing 기준
 
-현재는 등록된 첫 upstream을 사용한다. remote proxy를 구현하면 다음 중 하나의 정책이 필요하다.
+현재는 등록된 첫 upstream을 사용한다. 여러 upstream을 본격적으로 운영하려면 다음 중 하나의 routing 정책이 필요하다.
 
 | 방식 | 장점 | 단점 |
 | --- | --- | --- |
@@ -83,7 +147,7 @@ MCP request
 ## 보안 기준
 
 - 사용자 OIDC token을 upstream에 그대로 전달하지 않는다.
+- `authorization`, `cookie` 등 credential header는 custom forwarding 대상에서 제외한다.
 - upstream credential은 Gateway server-side secret으로 관리한다.
 - upstream egress는 Kubernetes NetworkPolicy로 allowlist한다.
 - side effect가 큰 tool은 upstream 자체 권한과 Gateway policy를 모두 적용한다.
-
