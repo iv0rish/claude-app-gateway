@@ -1,0 +1,32 @@
+listen:
+  host: 0.0.0.0
+  port: 8080
+  # Required behind any TLS-terminating proxy. Used for the IdP
+  # redirect_uri and the discovery document.
+  public_url: https://claude-gateway.internal.example.com
+
+oidc:
+  issuer: https://login.example.com        # must serve /.well-known/openid-configuration
+  client_id: 0oa1example2
+  client_secret: ${OIDC_CLIENT_SECRET}
+  allowed_email_domains: [example.com]        # reject id_tokens outside your org
+  userinfo_fallback: true                  # for IdPs whose id_token omits email/groups; harmless otherwise
+
+session:
+  jwt_secret: ${GATEWAY_JWT_SECRET}        # openssl rand -base64 32
+  ttl_hours: 1                             # also bounds revocation latency on IdP deprovision
+
+store:
+  postgres_url: ${GATEWAY_POSTGRES_URL}    # add ?sslmode=require for managed Postgres
+
+upstreams:
+  - provider: bedrock
+    region: us-east-1
+    auth: {}                               # empty: AWS default credential chain
+                                           # (IRSA, EC2/ECS task role, env vars, ~/.aws)
+
+# Models are translated per upstream automatically. The built-in catalog
+# maps claude-opus-4-8 to us.anthropic.claude-opus-4-8 and so on for every
+# Bedrock-supported Claude model. Set false and add a `models:` list to
+# expose only specific models.
+auto_include_builtin_models: true
