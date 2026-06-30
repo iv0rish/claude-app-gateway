@@ -1,0 +1,7 @@
+apiVersion: v2
+name: llm-gateway
+description: LLM gateway for rate limiting and Bedrock Guardrails enforcement
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

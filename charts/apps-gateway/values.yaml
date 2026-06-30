@@ -172,7 +172,7 @@ networkPolicy:
           kubernetes.io/metadata.name: llm-gateway
       podSelector:
         matchLabels:
-          app: llm-gateway
+          app.kubernetes.io/name: llm-gateway
       ports:
         - port: 8080
           protocol: TCP

@@ -55,6 +55,8 @@ ENTRYPOINT ["claude", "gateway", "--config", "/etc/claude/gateway.yaml"]
 - `Ingress`: internal ALB 또는 사내 ingress controller
 - `NetworkPolicy`: ingress/egress 제한
 
+`llm-gateway`는 [charts/llm-gateway](../charts/llm-gateway) Helm chart로 배포한다. 이 chart는 Apps Gateway가 호출할 `llm-gateway` Service, Bedrock 권한을 부여할 ServiceAccount, rate-limit/guardrail/upstream 설정 ConfigMap, shared secret Secret을 만든다.
+
 ## Gateway Deployment
 
 ```yaml

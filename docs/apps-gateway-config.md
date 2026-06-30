@@ -132,7 +132,7 @@ claude-apps-gateway
 - 허용된 요청만 vLLM 또는 다른 Anthropic-compatible upstream으로 전달한다.
 - upstream output에 Bedrock `ApplyGuardrail`을 적용한다.
 - guardrail 차단 시 Anthropic-compatible error 또는 refusal response를 반환한다.
-- Redis 같은 외부 store를 사용해 replica 간 counter를 공유한다.
+- Redis 같은 외부 store를 사용해 replica 간 counter를 공유한다. 현재 구현은 `REDIS_URL`이 없으면 in-memory counter로 동작하므로 운영에서는 Redis를 설정한다.
 
 지원 단위:
 

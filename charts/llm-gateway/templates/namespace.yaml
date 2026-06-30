@@ -1,0 +1,9 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "llm-gateway.namespace" . }}
+  labels:
+    kubernetes.io/metadata.name: {{ include "llm-gateway.namespace" . }}
+{{- end }}
+

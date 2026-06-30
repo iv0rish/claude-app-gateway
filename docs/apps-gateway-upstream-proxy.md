@@ -126,7 +126,17 @@ Guardrail input text 추출 대상:
 
 ## Rate Limit
 
-Rate limit은 Redis 기반 shared counter를 사용한다. replica가 여러 개인 EKS 배포에서는 process-local counter를 쓰지 않는다.
+Rate limit은 `REDIS_URL`이 설정되면 Redis 기반 shared counter를 사용한다. `REDIS_URL`이 없으면 in-memory counter로 동작하므로 replica가 여러 개인 EKS 운영 환경에서는 Redis를 반드시 설정한다.
+
+설정:
+
+| 환경 변수 | 설명 |
+| --- | --- |
+| `REDIS_URL` | Redis rate-limit store URL. 없으면 in-memory counter 사용 |
+| `RATE_LIMIT_WINDOW_MS` | rate-limit window |
+| `RATE_LIMIT_GLOBAL_RPM` | global request-per-minute 제한 |
+| `RATE_LIMIT_TIER_RPM` | tier별 RPM JSON object |
+| `RATE_LIMIT_MODEL_RPM` | model 또는 `tier:model`별 RPM JSON object |
 
 권장 bucket:
 
@@ -305,13 +315,15 @@ Prometheus metric:
 
 | Metric | Labels | 설명 |
 | --- | --- | --- |
-| `llm_policy_proxy_requests_total` | `route`, `status` | HTTP 요청 수 |
-| `llm_policy_proxy_request_duration_seconds` | `route`, `status` | 전체 latency |
-| `llm_policy_proxy_rate_limit_total` | `tier`, `model`, `decision` | rate limit 결정 |
-| `llm_policy_proxy_guardrail_total` | `source`, `action`, `policy` | guardrail 결과 |
-| `llm_policy_proxy_guardrail_duration_seconds` | `source` | ApplyGuardrail latency |
-| `llm_policy_proxy_upstream_requests_total` | `model`, `status` | upstream 호출 수 |
-| `llm_policy_proxy_upstream_duration_seconds` | `model` | upstream latency |
+| `llm_gateway_http_requests_total` | `method`, `route`, `status_code` | HTTP 요청 수 |
+| `llm_gateway_http_request_duration_seconds` | `method`, `route`, `status_code` | 전체 latency |
+| `llm_gateway_requests_total` | `tier`, `model`, `status` | `/v1/messages` 처리 결과 |
+| `llm_gateway_rate_limit_total` | `tier`, `model`, `decision` | rate limit 결정 |
+| `llm_gateway_guardrail_total` | `source`, `action` | guardrail 결과 |
+| `llm_gateway_guardrail_duration_seconds` | `source` | ApplyGuardrail latency |
+| `llm_gateway_upstream_requests_total` | `model`, `status` | upstream 호출 수 |
+| `llm_gateway_upstream_duration_seconds` | `model` | upstream latency |
+| `llm_gateway_auth_denied_total` | `status` | Apps Gateway shared secret 인증 실패 |
 
 Alert 후보:
 
