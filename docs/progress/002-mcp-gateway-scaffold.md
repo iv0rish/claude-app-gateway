@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress.
+Completed.
 
 ## Summary
 
@@ -14,5 +14,7 @@ In progress.
 ## Notes
 
 - The initial MCP endpoint supports `tools/list` and an example `tools/call` echo response.
-- The deeper auth, routing, Redis-backed rate limiting, Helm packaging, and tests will be refined in subsequent implementation steps.
-
+- Deeper auth, routing, policy, rate limiting, Helm packaging, and tests were completed in later steps:
+  - `004-mcp-gateway-chart.md`
+  - `005-mcp-gateway-modules.md`
+  - `006-validation.md`
