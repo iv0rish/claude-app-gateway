@@ -18,6 +18,66 @@ const upstreamSchema = z.object({
   token: z.string().optional(),
 });
 
+const toolPolicyMatchSchema = z
+  .object({
+    groups: z.array(z.string().min(1)).optional(),
+    servers: z.array(z.string().min(1)).optional(),
+    tools: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+
+const toolPolicyRuleSchema = toolPolicyMatchSchema.extend({
+  effect: z.enum(["allow", "deny"]),
+});
+
+const toolPoliciesJsonSchema = z.union([
+  z.array(toolPolicyRuleSchema),
+  z
+    .object({
+      rules: z.array(toolPolicyRuleSchema),
+    })
+    .strict()
+    .transform(({ rules }) => rules),
+  z
+    .object({
+      allow: z.array(toolPolicyMatchSchema).optional(),
+      deny: z.array(toolPolicyMatchSchema).optional(),
+    })
+    .strict()
+    .transform(({ allow = [], deny = [] }) => [
+      ...deny.map((rule) => ({ ...rule, effect: "deny" as const })),
+      ...allow.map((rule) => ({ ...rule, effect: "allow" as const })),
+    ]),
+]);
+
+const toolPolicies = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    if (!value) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(value);
+      const result = toolPoliciesJsonSchema.safeParse(parsed);
+      if (!result.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: result.error.message,
+        });
+        return z.NEVER;
+      }
+      return result.data;
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid MCP_TOOL_POLICIES JSON: ${(error as Error).message}`,
+      });
+      return z.NEVER;
+    }
+  });
+
 const configSchema = z.object({
   nodeEnv: z.string().default("development"),
   host: z.string().default("0.0.0.0"),
@@ -32,6 +92,7 @@ const configSchema = z.object({
   redisUrl: z.string().url().optional(),
   rateLimitWindowMs: z.coerce.number().int().positive().default(60_000),
   rateLimitMax: z.coerce.number().int().positive().default(60),
+  toolPolicies,
   upstreams: z
     .string()
     .default('[{"name":"example","url":"http://127.0.0.1:9090/mcp"}]')
@@ -75,7 +136,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     redisUrl: env.REDIS_URL,
     rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
     rateLimitMax: env.RATE_LIMIT_MAX,
+    toolPolicies: env.MCP_TOOL_POLICIES,
     upstreams: env.MCP_UPSTREAMS,
   });
 }
-
