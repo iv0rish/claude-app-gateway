@@ -1,6 +1,6 @@
 # Claude Apps Gateway 설정 가이드
 
-이 문서는 Claude Apps Gateway가 사내 vLLM endpoint를 사용하도록 구성하는 기준을 정의한다. 배포 패키징과 Kubernetes 운영 절차는 [apps-gateway-packaging.md](./apps-gateway-packaging.md), MCP Gateway는 [mcp-gateway.md](./mcp-gateway.md)를 따른다.
+이 문서는 Claude Apps Gateway가 사내 vLLM endpoint를 사용하도록 구성하는 기준을 정의한다. 배포 패키징과 Kubernetes 운영 절차는 [apps-gateway-packaging.md](./apps-gateway-packaging.md), MCP Gateway는 [mcp-gateway/](./mcp-gateway/)를 따른다.
 
 참고 문서:
 
@@ -208,4 +208,3 @@ OS별 파일 경로:
 | Windows | `C:\Program Files\ClaudeCode\managed-settings.json` 또는 HKLM Group Policy |
 
 `forceLoginMethod: gateway`와 `forceLoginGatewayUrl`은 admin-controlled managed tier에서만 동작한다. 사용자가 `~/.claude/settings.json`에 직접 넣는 방식은 사용할 수 없다.
-

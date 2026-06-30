@@ -20,6 +20,5 @@ Completed.
 
 - `docs/apps-gateway-config.md`
 - `docs/apps-gateway-packaging.md`
-- `docs/mcp-gateway.md`
+- `docs/mcp-gateway/`
 - `gateway.yaml`
-
