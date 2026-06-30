@@ -12,7 +12,7 @@ Completed.
   - Apps Gateway packaging and EKS deployment
   - MCP Gateway design and deployment
 - Established the implementation approach:
-  - Apps Gateway uses Anthropic upstream `base_url` pointing at an internal policy proxy.
+  - Apps Gateway uses Anthropic upstream `base_url` pointing at the internal `llm-gateway`.
   - Gateway packaging uses containerized Claude Apps Gateway plus Helm charts.
   - MCP Gateway is implemented as a separate TypeScript/Fastify service using the same IdP through a separate OIDC/OAuth flow.
 

@@ -1,6 +1,6 @@
-# Apps Gateway Upstream Policy Proxy 구현 가이드
+# Apps Gateway Upstream LLM Gateway 구현 가이드
 
-이 문서는 Claude Apps Gateway 뒤쪽에 배치할 `llm-policy-proxy` 구현 기준을 정의한다. 기존 rate-limit proxy 책임에 Bedrock Guardrails 강제 적용을 합친 구조다.
+이 문서는 Claude Apps Gateway 뒤쪽에 배치할 `llm-gateway` 구현 기준을 정의한다. 기존 rate-limit proxy 책임에 Bedrock Guardrails 강제 적용을 합친 구조다.
 
 참고 문서:
 
@@ -13,13 +13,13 @@
 ```text
 Claude Code
   -> Claude Apps Gateway
-  -> llm-policy-proxy
+  -> llm-gateway
      -> Redis
      -> Bedrock Runtime ApplyGuardrail
      -> vLLM or another Anthropic-compatible upstream
 ```
 
-Apps Gateway는 OIDC 로그인, session, spend limit, model allowlist를 담당한다. `llm-policy-proxy`는 `/v1/messages` 추론 요청에 대해 다음 정책을 강제한다.
+Apps Gateway는 OIDC 로그인, session, spend limit, model allowlist를 담당한다. `llm-gateway`는 `/v1/messages` 추론 요청에 대해 다음 정책을 강제한다.
 
 - Gateway shared secret 검증.
 - request validation.
@@ -33,12 +33,12 @@ Apps Gateway 자체 설정만으로 non-Bedrock upstream에 Bedrock Guardrails�
 
 ## Naming
 
-기존 문서에서는 `llm-rate-limit-proxy`라는 이름을 사용했다. Guardrail 기능까지 포함하면 책임이 rate limit보다 넓어지므로 신규 구현 이름은 `llm-policy-proxy`로 한다.
+기존 문서에서는 `llm-rate-limit-proxy`와 `llm-policy-proxy`라는 이름을 사용했다. Guardrail 기능까지 포함하면 책임이 rate limit보다 넓어지므로 신규 구현 이름은 `llm-gateway`로 한다.
 
-마이그레이션 중 기존 Apps Gateway chart나 values가 `llm-rate-limit-proxy`를 바라보고 있다면 다음 중 하나를 선택한다.
+마이그레이션 중 기존 Apps Gateway chart나 values가 `llm-rate-limit-proxy` 또는 `llm-policy-proxy`를 바라보고 있다면 다음 중 하나를 선택한다.
 
-- Apps Gateway `base_url`을 `http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080`로 변경한다.
-- `llm-rate-limit-proxy` Service를 `llm-policy-proxy` Deployment로 연결하는 compatibility Service로 유지한다.
+- Apps Gateway `base_url`을 `http://llm-gateway.llm-gateway.svc.cluster.local:8080`로 변경한다.
+- `llm-rate-limit-proxy` 또는 `llm-policy-proxy` Service를 `llm-gateway` Deployment로 연결하는 compatibility Service로 유지한다.
 
 ## API Surface
 
@@ -90,7 +90,7 @@ upstreams:
     provider: anthropic
     auth:
       api_key: ${VLLM_STANDARD_KEY}
-    base_url: http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080
+    base_url: http://llm-gateway.llm-gateway.svc.cluster.local:8080
 ```
 
 Proxy 검증:
@@ -348,8 +348,8 @@ Log에 남기지 않을 값:
 
 필수 리소스:
 
-- `Deployment`: `llm-policy-proxy`
-- `Service`: `llm-policy-proxy`, port 8080
+- `Deployment`: `llm-gateway`
+- `Service`: `llm-gateway`, port 8080
 - `ServiceAccount`: IRSA로 Bedrock 권한 부여
 - `Secret`: Gateway shared secrets, upstream API key
 - `ConfigMap`: policy, rate-limit, guardrail 설정
@@ -359,10 +359,10 @@ Log에 남기지 않을 값:
 NetworkPolicy:
 
 ```text
-claude-apps-gateway -> llm-policy-proxy
-llm-policy-proxy -> Redis
-llm-policy-proxy -> Bedrock Runtime
-llm-policy-proxy -> vLLM
+claude-apps-gateway -> llm-gateway
+llm-gateway -> Redis
+llm-gateway -> Bedrock Runtime
+llm-gateway -> vLLM
 ```
 
 Gateway가 vLLM 또는 외부 Anthropic API로 직접 나가는 egress는 차단한다.
@@ -411,4 +411,3 @@ EKS smoke test:
 - guardrail block 샘플이 vLLM access log에 남지 않음.
 - output block 샘플이 client에 원문으로 노출되지 않음.
 - Gateway Pod에서 vLLM 직접 egress 불가.
-

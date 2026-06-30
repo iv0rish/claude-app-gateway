@@ -26,14 +26,14 @@ spec:
       ports:
         {{- toYaml .Values.networkPolicy.egress.dns.ports | nindent 8 }}
     {{- end }}
-    {{- if .Values.networkPolicy.egress.policyProxy.enabled }}
+    {{- if .Values.networkPolicy.egress.llmGateway.enabled }}
     - to:
         - namespaceSelector:
-            {{- toYaml .Values.networkPolicy.egress.policyProxy.namespaceSelector | nindent 12 }}
+            {{- toYaml .Values.networkPolicy.egress.llmGateway.namespaceSelector | nindent 12 }}
           podSelector:
-            {{- toYaml .Values.networkPolicy.egress.policyProxy.podSelector | nindent 12 }}
+            {{- toYaml .Values.networkPolicy.egress.llmGateway.podSelector | nindent 12 }}
       ports:
-        {{- toYaml .Values.networkPolicy.egress.policyProxy.ports | nindent 8 }}
+        {{- toYaml .Values.networkPolicy.egress.llmGateway.ports | nindent 8 }}
     {{- end }}
     {{- if .Values.networkPolicy.egress.postgres.enabled }}
     - to:

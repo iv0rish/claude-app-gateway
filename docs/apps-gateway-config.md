@@ -14,7 +14,7 @@
 Developer Claude Code
   -> internal HTTPS Ingress/ALB
   -> claude-apps-gateway Service
-  -> llm-policy-proxy Service
+  -> llm-gateway Service
   -> vLLM ClusterIP Service
   -> vLLM Pods
 ```
@@ -23,8 +23,8 @@ Developer Claude Code
 
 - 개발자 클라이언트는 Claude Apps Gateway URL만 안다.
 - Gateway는 OIDC로 사용자를 인증하고, Postgres에 device grant/session/spend-limit 상태를 저장한다.
-- Gateway의 Anthropic upstream `base_url`은 EKS 내부 policy proxy를 가리킨다.
-- policy proxy는 Anthropic Messages API 요청에 rate limit과 Bedrock Guardrails를 적용한 뒤 vLLM으로 전달한다.
+- Gateway의 Anthropic upstream `base_url`은 EKS 내부 `llm-gateway`를 가리킨다.
+- `llm-gateway`는 Anthropic Messages API 요청에 rate limit과 Bedrock Guardrails를 적용한 뒤 vLLM으로 전달한다.
 - Gateway Pod에서 외부 `api.anthropic.com` egress는 차단한다.
 - vLLM은 Anthropic Messages API 호환 endpoint인 `/v1/messages`를 제공해야 한다.
 
@@ -40,7 +40,7 @@ upstreams:
     provider: anthropic
     auth:
       api_key: ${VLLM_STANDARD_KEY}
-    base_url: http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080
+    base_url: http://llm-gateway.llm-gateway.svc.cluster.local:8080
 ```
 
 CoreDNS rewrite는 base URL을 바꿀 수 없는 별도 클라이언트가 생겼을 때만 검토한다. 그 경우에도 vLLM으로 직접 rewrite하지 말고, `api.anthropic.com` 인증서/SNI를 처리할 수 있는 내부 TLS 프록시를 별도 설계한다.
@@ -78,7 +78,7 @@ upstreams:
     provider: anthropic
     auth:
       api_key: ${VLLM_STANDARD_KEY}
-    base_url: http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080
+    base_url: http://llm-gateway.llm-gateway.svc.cluster.local:8080
 
 auto_include_builtin_models: false
 models:
@@ -107,22 +107,22 @@ managed:
 - `oidc.issuer`는 `/.well-known/openid-configuration`을 제공해야 한다.
 - `GATEWAY_JWT_SECRET`은 `openssl rand -base64 32`로 생성한다.
 - `GATEWAY_POSTGRES_URL`은 운영에서는 RDS PostgreSQL 14+를 권장하며, managed Postgres라면 `sslmode=require`를 붙인다.
-- `VLLM_STANDARD_KEY`는 Gateway가 policy proxy에 보낼 shared secret이다.
+- `VLLM_STANDARD_KEY`는 Apps Gateway가 `llm-gateway`에 보낼 shared secret이다.
 - `models[].id`는 Claude Code 사용자에게 노출할 모델명이다.
 - `models[].upstream_model.<upstream-name>` 값은 vLLM의 served model name과 일치해야 한다.
 - upstream에 `name:`을 지정하면 `models[].upstream_model`은 provider 이름이 아니라 upstream name을 key로 사용한다.
 
-## Inference Policy Proxy
+## Inference LLM Gateway
 
 Claude Apps Gateway의 내장 `rate_limits` 설정은 `/v1/messages` 추론 요청이 아니라 unauthenticated device authorization 흐름 보호용이다. `/v1/messages`에 직접 적용되는 내장 제어는 spend limit과 `availableModels` allowlist다. QPS/RPM/TPM 제한과 Bedrock Guardrails 강제 적용은 Gateway 뒤쪽에 별도 proxy를 두고 구현한다.
 
 ```text
 claude-apps-gateway
-  -> llm-policy-proxy
+  -> llm-gateway
   -> vLLM
 ```
 
-policy proxy 책임:
+`llm-gateway` 책임:
 
 - Anthropic Messages API의 `/v1/messages` 요청을 검증하고 upstream-compatible하게 proxy한다.
 - Gateway가 보낸 `x-api-key`를 검증한다.
@@ -151,12 +151,12 @@ upstreams:
     provider: anthropic
     auth:
       api_key: ${VLLM_STANDARD_KEY}
-    base_url: http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080
+    base_url: http://llm-gateway.llm-gateway.svc.cluster.local:8080
   - name: vllm-premium
     provider: anthropic
     auth:
       api_key: ${VLLM_PREMIUM_KEY}
-    base_url: http://llm-policy-proxy.llm-gateway.svc.cluster.local:8080
+    base_url: http://llm-gateway.llm-gateway.svc.cluster.local:8080
 
 models:
   - id: claude-sonnet-4-6-standard
@@ -197,8 +197,8 @@ Guardrail 적용 기준:
 - served model name은 slash 없는 이름을 사용한다. 예: `my-model`
 - Gateway의 `models[].upstream_model.<upstream-name>` 값과 vLLM served model name을 일치시킨다.
 - tool calling을 사용하는 Claude Code 워크로드를 고려해 tool call 지원 모델을 선택한다.
-- vLLM access log에서 policy proxy 요청의 path가 `/v1/messages`로 기록되는지 확인한다.
-- vLLM 인증을 켠 경우 policy proxy가 vLLM server token을 붙여서 upstream 요청을 보내도록 한다.
+- vLLM access log에서 `llm-gateway` 요청의 path가 `/v1/messages`로 기록되는지 확인한다.
+- vLLM 인증을 켠 경우 `llm-gateway`가 vLLM server token을 붙여서 upstream 요청을 보내도록 한다.
 
 ## 클라이언트 Managed Settings
 
