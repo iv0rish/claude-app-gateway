@@ -50,6 +50,9 @@ Apps Gateway upstream별 `auth.api_key` 값을 다르게 두면 tier별 rate lim
 | `RATE_LIMIT_GLOBAL_RPM` | `600` | global RPM |
 | `RATE_LIMIT_TIER_RPM` | `{}` | tier별 RPM JSON object |
 | `RATE_LIMIT_MODEL_RPM` | `{}` | model 또는 `tier:model`별 RPM JSON object |
+| `RATE_LIMIT_GLOBAL_TPM` | `0` | global TPM. `0`이면 token bucket 비활성 |
+| `RATE_LIMIT_TIER_TPM` | `{}` | tier별 TPM JSON object |
+| `RATE_LIMIT_MODEL_TPM` | `{}` | model 또는 `tier:model`별 TPM JSON object |
 
 예시:
 
@@ -90,9 +93,14 @@ config:
   upstreamBaseUrl: http://vllm.vllm.svc.cluster.local:8000
   redisUrl: redis://redis.llm-gateway.svc.cluster.local:6379
   rateLimitGlobalRpm: 600
+  rateLimitGlobalTpm: 60000
   rateLimitTierRpm:
     standard: 300
     premium: 1200
+  rateLimitTierTpm:
+    standard: 30000
+    premium: 120000
+  promptLoggingEnabled: true
   guardrailInputEnabled: true
   guardrailOutputEnabled: true
   guardrailFailPolicy: closed
@@ -106,4 +114,3 @@ secrets:
       tier: standard
   upstreamApiKey: ""
 ```
-

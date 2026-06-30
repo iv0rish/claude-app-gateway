@@ -57,6 +57,10 @@ config:
   rateLimitGlobalRpm: 600
   rateLimitTierRpm: {}
   rateLimitModelRpm: {}
+  rateLimitGlobalTpm: 0
+  rateLimitTierTpm: {}
+  rateLimitModelTpm: {}
+  promptLoggingEnabled: true
   guardrailInputEnabled: true
   guardrailOutputEnabled: true
   guardrailFailPolicy: closed

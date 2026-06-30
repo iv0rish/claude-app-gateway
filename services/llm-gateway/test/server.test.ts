@@ -20,6 +20,10 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     rateLimitGlobalRpm: 100,
     rateLimitTierRpm: {},
     rateLimitModelRpm: {},
+    rateLimitGlobalTpm: 0,
+    rateLimitTierTpm: {},
+    rateLimitModelTpm: {},
+    promptLoggingEnabled: true,
     guardrailInputEnabled: true,
     guardrailOutputEnabled: true,
     guardrailFailPolicy: "closed",
@@ -49,6 +53,7 @@ function limiter(allowed = true) {
       allowed,
       reason: allowed ? "allowed" : "rate limit exceeded",
       resetAt: Date.now() + 60_000,
+      kind: "request",
     })),
   } satisfies RateLimiter;
 }
@@ -99,10 +104,11 @@ describe("LLM gateway server", () => {
   it("applies input and output guardrails around the upstream call", async () => {
     const guard = guardrail();
     const upstreamClient = upstream();
-    const { app } = await buildServer({
+    const limit = limiter();
+    const { app, metrics } = await buildServer({
       config: config(),
       guardrail: guard,
-      limiter: limiter(),
+      limiter: limit,
       upstream: upstreamClient,
     });
     try {
@@ -122,10 +128,12 @@ describe("LLM gateway server", () => {
       });
       expect(guard.apply).toHaveBeenNthCalledWith(1, "INPUT", "hello");
       expect(guard.apply).toHaveBeenNthCalledWith(2, "OUTPUT", "upstream answer");
+      expect(limit.check).toHaveBeenCalledWith("standard", "my-model", 128);
       expect(upstreamClient.messages).toHaveBeenCalledWith(
         expect.objectContaining({ stream: false }),
         expect.objectContaining({ "anthropic-version": "2023-06-01" }),
       );
+      expect(metrics.render()).toContain("llm_gateway_prompts_logged_total");
     } finally {
       await app.close();
     }

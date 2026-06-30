@@ -18,7 +18,8 @@ GET /metrics
 | `llm_gateway_http_request_duration_seconds` | `method`, `route`, `status_code` | HTTP latency |
 | `llm_gateway_requests_total` | `tier`, `model`, `status` | `/v1/messages` 처리 결과 |
 | `llm_gateway_auth_denied_total` | `status` | 인증 실패 |
-| `llm_gateway_rate_limit_total` | `tier`, `model`, `decision` | rate limit 결정 |
+| `llm_gateway_rate_limit_total` | `tier`, `model`, `decision`, `kind` | rate limit 결정 |
+| `llm_gateway_prompts_logged_total` | `tier`, `model` | raw prompt log 기록 수 |
 | `llm_gateway_guardrail_total` | `source`, `action` | guardrail 결과 |
 | `llm_gateway_guardrail_duration_seconds` | `source` | Bedrock `ApplyGuardrail` latency |
 | `llm_gateway_upstream_requests_total` | `model`, `status` | upstream 호출 수 |
@@ -31,6 +32,7 @@ GET /metrics
 | `auth.denied` | shared secret 인증 실패 |
 | `rate_limited` | rate limit 초과 |
 | `rate_limit.error` | rate-limit store 오류 |
+| `prompt.logged` | raw prompt 기록 |
 | `guardrail.input.allowed` | input guardrail 통과 |
 | `guardrail.input.blocked` | input guardrail 차단 |
 | `guardrail.input.error` | input guardrail 호출 오류 |
@@ -51,6 +53,8 @@ Audit log 필드:
 | `statusCode` | HTTP status |
 | `latencyMs` | 처리 시간 |
 | `error` | 오류 요약 |
+| `promptText` | raw prompt text. `prompt.logged`에만 포함 |
+| `promptLength` | prompt text length |
 
 ## Log Redaction
 
@@ -58,6 +62,8 @@ Log에 남기지 않는다.
 
 - Apps Gateway shared secret.
 - upstream API key.
-- prompt 원문.
 - model output 원문.
 
+예외:
+
+- `prompt.logged` event는 요구사항에 따라 prompt 원문을 `promptText`로 남긴다.

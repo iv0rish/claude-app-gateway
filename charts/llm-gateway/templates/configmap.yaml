@@ -16,6 +16,10 @@ data:
   RATE_LIMIT_GLOBAL_RPM: {{ .Values.config.rateLimitGlobalRpm | quote }}
   RATE_LIMIT_TIER_RPM: {{ toJson .Values.config.rateLimitTierRpm | quote }}
   RATE_LIMIT_MODEL_RPM: {{ toJson .Values.config.rateLimitModelRpm | quote }}
+  RATE_LIMIT_GLOBAL_TPM: {{ .Values.config.rateLimitGlobalTpm | quote }}
+  RATE_LIMIT_TIER_TPM: {{ toJson .Values.config.rateLimitTierTpm | quote }}
+  RATE_LIMIT_MODEL_TPM: {{ toJson .Values.config.rateLimitModelTpm | quote }}
+  PROMPT_LOGGING_ENABLED: {{ .Values.config.promptLoggingEnabled | quote }}
   GUARDRAIL_INPUT_ENABLED: {{ .Values.config.guardrailInputEnabled | quote }}
   GUARDRAIL_OUTPUT_ENABLED: {{ .Values.config.guardrailOutputEnabled | quote }}
   GUARDRAIL_FAIL_POLICY: {{ .Values.config.guardrailFailPolicy | quote }}

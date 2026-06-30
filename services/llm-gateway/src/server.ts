@@ -222,7 +222,22 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
 
     let rateLimit;
     try {
-      rateLimit = await limiter.check(gateway.tier, body.model);
+      const promptText = extractInputText(body);
+      if (config.promptLoggingEnabled) {
+        writeAudit(request.log, {
+          event: "prompt.logged",
+          tier: gateway.tier,
+          model: body.model,
+          promptText,
+          promptLength: promptText.length,
+        });
+        metrics.increment("llm_gateway_prompts_logged_total", "Total logged prompts", {
+          tier: gateway.tier,
+          model: body.model,
+        });
+      }
+
+      rateLimit = await limiter.check(gateway.tier, body.model, body.max_tokens);
     } catch (error) {
       const message = error instanceof Error ? error.message : "rate limit store error";
       reply.code(503);
@@ -230,6 +245,7 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
         tier: gateway.tier,
         model: body.model,
         decision: "error",
+        kind: "unknown",
       });
       writeAudit(request.log, {
         event: "rate_limit.error",
@@ -251,6 +267,7 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
         tier: gateway.tier,
         model: body.model,
         decision: "denied",
+        kind: rateLimit.kind ?? "unknown",
       });
       writeAudit(request.log, {
         event: "rate_limited",
@@ -267,6 +284,7 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
       tier: gateway.tier,
       model: body.model,
       decision: "allowed",
+      kind: rateLimit.kind ?? "unknown",
     });
 
     try {

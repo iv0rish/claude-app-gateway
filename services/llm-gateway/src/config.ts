@@ -34,6 +34,31 @@ const jsonRecord = z
     }
   });
 
+const jsonPositiveRecord = z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    if (!value) return {};
+    try {
+      const parsed = JSON.parse(value);
+      const result = z.record(z.coerce.number().int().positive()).safeParse(parsed);
+      if (!result.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: result.error.message,
+        });
+        return z.NEVER;
+      }
+      return result.data;
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Invalid JSON object: ${(error as Error).message}`,
+      });
+      return z.NEVER;
+    }
+  });
+
 const apiKeySchema = z.object({
   key: z.string().min(1),
   tier: z.string().min(1).default("default"),
@@ -83,8 +108,12 @@ const configSchema = z.object({
   redisUrl: z.string().url().optional(),
   rateLimitWindowMs: z.coerce.number().int().positive().default(60_000),
   rateLimitGlobalRpm: z.coerce.number().int().positive().default(600),
-  rateLimitTierRpm: jsonRecord,
-  rateLimitModelRpm: jsonRecord,
+  rateLimitTierRpm: jsonPositiveRecord,
+  rateLimitModelRpm: jsonPositiveRecord,
+  rateLimitGlobalTpm: z.coerce.number().int().nonnegative().default(0),
+  rateLimitTierTpm: jsonPositiveRecord,
+  rateLimitModelTpm: jsonPositiveRecord,
+  promptLoggingEnabled: envBoolean.default(true),
   guardrailInputEnabled: envBoolean.default(false),
   guardrailOutputEnabled: envBoolean.default(false),
   guardrailFailPolicy: z.enum(["closed", "open"]).default("closed"),
@@ -118,6 +147,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     rateLimitGlobalRpm: env.RATE_LIMIT_GLOBAL_RPM,
     rateLimitTierRpm: env.RATE_LIMIT_TIER_RPM,
     rateLimitModelRpm: env.RATE_LIMIT_MODEL_RPM,
+    rateLimitGlobalTpm: env.RATE_LIMIT_GLOBAL_TPM,
+    rateLimitTierTpm: env.RATE_LIMIT_TIER_TPM,
+    rateLimitModelTpm: env.RATE_LIMIT_MODEL_TPM,
+    promptLoggingEnabled: env.PROMPT_LOGGING_ENABLED,
     guardrailInputEnabled: env.GUARDRAIL_INPUT_ENABLED,
     guardrailOutputEnabled: env.GUARDRAIL_OUTPUT_ENABLED,
     guardrailFailPolicy: env.GUARDRAIL_FAIL_POLICY,

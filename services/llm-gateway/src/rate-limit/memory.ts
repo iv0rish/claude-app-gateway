@@ -4,6 +4,7 @@ export type RateLimitDecision = {
   allowed: boolean;
   reason: string;
   resetAt: number;
+  kind?: "request" | "token";
 };
 
 type Bucket = {
@@ -12,7 +13,7 @@ type Bucket = {
 };
 
 export type RateLimiter = {
-  check(tier: string, model: string): Promise<RateLimitDecision>;
+  check(tier: string, model: string, tokenReservation: number): Promise<RateLimitDecision>;
 };
 
 export class MemoryRateLimiter implements RateLimiter {
@@ -20,23 +21,21 @@ export class MemoryRateLimiter implements RateLimiter {
 
   constructor(private readonly config: AppConfig) {}
 
-  async check(tier: string, model: string): Promise<RateLimitDecision> {
-    const decisions = [
-      this.checkBucket("global", this.config.rateLimitGlobalRpm),
-      this.checkBucket(`tier:${tier}`, this.config.rateLimitTierRpm[tier] ?? this.config.rateLimitGlobalRpm),
-      this.checkBucket(
-        `tier:${tier}:model:${model}`,
-        this.config.rateLimitModelRpm[`${tier}:${model}`] ??
-          this.config.rateLimitModelRpm[model] ??
-          this.config.rateLimitGlobalRpm,
-      ),
-    ];
+  async check(tier: string, model: string, tokenReservation: number): Promise<RateLimitDecision> {
+    const decisions = rateLimitForConfig(this.config, tier, model, tokenReservation).map((bucket) =>
+      this.checkBucket(bucket.key, bucket.limit, bucket.amount, bucket.kind),
+    );
 
     const denied = decisions.find((decision) => !decision.allowed);
     return denied ?? decisions[decisions.length - 1];
   }
 
-  private checkBucket(key: string, limit: number): RateLimitDecision {
+  private checkBucket(
+    key: string,
+    limit: number,
+    amount: number,
+    kind: "request" | "token",
+  ): RateLimitDecision {
     const now = Date.now();
     const current = this.buckets.get(key);
     const bucket =
@@ -47,7 +46,7 @@ export class MemoryRateLimiter implements RateLimiter {
             resetAt: now + this.config.rateLimitWindowMs,
           };
 
-    bucket.count += 1;
+    bucket.count += amount;
     this.buckets.set(key, bucket);
 
     if (bucket.count > limit) {
@@ -55,6 +54,7 @@ export class MemoryRateLimiter implements RateLimiter {
         allowed: false,
         reason: `rate limit exceeded for ${key}`,
         resetAt: bucket.resetAt,
+        kind,
       };
     }
 
@@ -62,6 +62,7 @@ export class MemoryRateLimiter implements RateLimiter {
       allowed: true,
       reason: "allowed",
       resetAt: bucket.resetAt,
+      kind,
     };
   }
 }
@@ -70,22 +71,73 @@ export function rateLimitForConfig(
   config: AppConfig,
   tier: string,
   model: string,
-): Array<{ key: string; limit: number }> {
-  return [
+  tokenReservation: number,
+): Array<{ key: string; limit: number; amount: number; kind: "request" | "token" }> {
+  const requestBuckets: Array<{
+    key: string;
+    limit: number;
+    amount: number;
+    kind: "request";
+  }> = [
     {
-      key: "global",
+      key: "rpm:global",
       limit: config.rateLimitGlobalRpm,
+      amount: 1,
+      kind: "request",
     },
     {
-      key: `tier:${tier}`,
+      key: `rpm:tier:${tier}`,
       limit: config.rateLimitTierRpm[tier] ?? config.rateLimitGlobalRpm,
+      amount: 1,
+      kind: "request",
     },
     {
-      key: `tier:${tier}:model:${model}`,
+      key: `rpm:tier:${tier}:model:${model}`,
       limit:
         config.rateLimitModelRpm[`${tier}:${model}`] ??
         config.rateLimitModelRpm[model] ??
         config.rateLimitGlobalRpm,
+      amount: 1,
+      kind: "request",
     },
   ];
+
+  const tokenBuckets: Array<{
+    key: string;
+    limit: number;
+    amount: number;
+    kind: "token";
+  }> = [];
+  const tierTpm = config.rateLimitTierTpm[tier] ?? config.rateLimitGlobalTpm;
+  const modelTpm =
+    config.rateLimitModelTpm[`${tier}:${model}`] ??
+    config.rateLimitModelTpm[model] ??
+    config.rateLimitGlobalTpm;
+
+  if (config.rateLimitGlobalTpm > 0) {
+    tokenBuckets.push({
+      key: "tpm:global",
+      limit: config.rateLimitGlobalTpm,
+      amount: tokenReservation,
+      kind: "token",
+    });
+  }
+  if (tierTpm > 0) {
+    tokenBuckets.push({
+      key: `tpm:tier:${tier}`,
+      limit: tierTpm,
+      amount: tokenReservation,
+      kind: "token",
+    });
+  }
+  if (modelTpm > 0) {
+    tokenBuckets.push({
+      key: `tpm:tier:${tier}:model:${model}`,
+      limit: modelTpm,
+      amount: tokenReservation,
+      kind: "token",
+    });
+  }
+
+  return [...requestBuckets, ...tokenBuckets];
 }

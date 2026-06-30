@@ -8,8 +8,8 @@ import {
 } from "./memory.js";
 
 const incrementScript = `
-local count = redis.call("INCR", KEYS[1])
-if count == 1 then
+local count = redis.call("INCRBY", KEYS[1], ARGV[2])
+if count == tonumber(ARGV[2]) then
   redis.call("PEXPIRE", KEYS[1], ARGV[1])
 end
 local ttl = redis.call("PTTL", KEYS[1])
@@ -29,12 +29,12 @@ export class RedisRateLimiter implements RateLimiter {
     });
   }
 
-  async check(tier: string, model: string): Promise<RateLimitDecision> {
+  async check(tier: string, model: string, tokenReservation: number): Promise<RateLimitDecision> {
     if (this.redis.status === "wait") {
       await this.redis.connect();
     }
 
-    const buckets = rateLimitForConfig(this.config, tier, model);
+    const buckets = rateLimitForConfig(this.config, tier, model, tokenReservation);
     let lastAllowed: RateLimitDecision = {
       allowed: true,
       reason: "allowed",
@@ -48,6 +48,7 @@ export class RedisRateLimiter implements RateLimiter {
         1,
         key,
         String(this.config.rateLimitWindowMs),
+        String(bucket.amount),
       )) as [number, number];
 
       const resetAt = Date.now() + Math.max(ttl, 0);
@@ -56,12 +57,14 @@ export class RedisRateLimiter implements RateLimiter {
           allowed: false,
           reason: `rate limit exceeded for ${bucket.key}`,
           resetAt,
+          kind: bucket.kind,
         };
       }
       lastAllowed = {
         allowed: true,
         reason: "allowed",
         resetAt,
+        kind: bucket.kind,
       };
     }
 

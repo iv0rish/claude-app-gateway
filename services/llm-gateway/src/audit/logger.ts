@@ -8,6 +8,8 @@ export type AuditEvent = {
   statusCode?: number;
   latencyMs?: number;
   error?: string;
+  promptText?: string;
+  promptLength?: number;
 };
 
 export function writeAudit(logger: FastifyBaseLogger, event: AuditEvent): void {
@@ -21,8 +23,9 @@ export function writeAudit(logger: FastifyBaseLogger, event: AuditEvent): void {
       statusCode: event.statusCode,
       latencyMs: event.latencyMs,
       error: event.error,
+      promptText: event.promptText,
+      promptLength: event.promptLength,
     },
     "llm gateway audit event",
   );
 }
-

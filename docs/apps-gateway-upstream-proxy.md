@@ -137,6 +137,10 @@ Rate limit은 `REDIS_URL`이 설정되면 Redis 기반 shared counter를 사용�
 | `RATE_LIMIT_GLOBAL_RPM` | global request-per-minute 제한 |
 | `RATE_LIMIT_TIER_RPM` | tier별 RPM JSON object |
 | `RATE_LIMIT_MODEL_RPM` | model 또는 `tier:model`별 RPM JSON object |
+| `RATE_LIMIT_GLOBAL_TPM` | global token-per-minute 제한. `max_tokens` reservation 기준 |
+| `RATE_LIMIT_TIER_TPM` | tier별 TPM JSON object |
+| `RATE_LIMIT_MODEL_TPM` | model 또는 `tier:model`별 TPM JSON object |
+| `PROMPT_LOGGING_ENABLED` | raw prompt logging 활성화 |
 
 권장 bucket:
 
@@ -145,7 +149,7 @@ Rate limit은 `REDIS_URL`이 설정되면 Redis 기반 shared counter를 사용�
 | Global RPM | `global:rpm` | 전체 보호 |
 | Tier RPM | `tier:standard:rpm` | shared secret별 제한 |
 | Model RPM | `tier:standard:model:my-model:rpm` | 모델별 제한 |
-| Token reservation | `tier:standard:model:my-model:tpm` | `max_tokens` 기반 보수적 제한 |
+| Token reservation | `tpm:tier:standard:model:my-model` | `max_tokens` 기반 보수적 제한 |
 
 초과 응답은 Anthropic-compatible error 형식을 사용한다.
 
@@ -318,7 +322,8 @@ Prometheus metric:
 | `llm_gateway_http_requests_total` | `method`, `route`, `status_code` | HTTP 요청 수 |
 | `llm_gateway_http_request_duration_seconds` | `method`, `route`, `status_code` | 전체 latency |
 | `llm_gateway_requests_total` | `tier`, `model`, `status` | `/v1/messages` 처리 결과 |
-| `llm_gateway_rate_limit_total` | `tier`, `model`, `decision` | rate limit 결정 |
+| `llm_gateway_rate_limit_total` | `tier`, `model`, `decision`, `kind` | rate limit 결정 |
+| `llm_gateway_prompts_logged_total` | `tier`, `model` | prompt log 기록 수 |
 | `llm_gateway_guardrail_total` | `source`, `action` | guardrail 결과 |
 | `llm_gateway_guardrail_duration_seconds` | `source` | ApplyGuardrail latency |
 | `llm_gateway_upstream_requests_total` | `model`, `status` | upstream 호출 수 |
