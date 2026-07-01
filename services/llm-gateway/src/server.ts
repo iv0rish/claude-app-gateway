@@ -10,6 +10,7 @@ import {
   upstreamRequestBody,
   type AnthropicMessagesRequest,
 } from "./anthropic/messages.js";
+import { AppsSessionService } from "./apps/session.js";
 import { writeAudit } from "./audit/logger.js";
 import { AuthError, createAuth, type AuthService } from "./auth/shared-secret.js";
 import { loadConfig, type AppConfig } from "./config.js";
@@ -130,6 +131,7 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
   const config = dependencies.config ?? loadConfig();
   const metrics = dependencies.metrics ?? createMetricsRegistry();
   const auth = dependencies.auth ?? createAuth(config.apiKeys);
+  const appsSession = new AppsSessionService(config);
   const limiter = dependencies.limiter ?? createRateLimiter(config);
   const guardrail = dependencies.guardrail ?? createGuardrailClient(config);
   const upstream = dependencies.upstream ?? new HttpUpstreamClient(config);
@@ -184,11 +186,74 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
     return metrics.render();
   });
 
+  app.get("/protocol", async () => appsSession.protocol());
+
+  app.get("/.well-known/oauth-authorization-server", async () => appsSession.metadata());
+
+  app.post("/oauth/device_authorization", async (_request, reply) => {
+    if (!appsSession.enabled()) {
+      reply.code(404);
+      return { error: "apps compatible mode disabled" };
+    }
+    return appsSession.createDeviceGrant();
+  });
+
+  app.get("/device", async (request, reply) => {
+    if (!appsSession.enabled()) {
+      reply.code(404);
+      return { error: "apps compatible mode disabled" };
+    }
+    const query = request.query as {
+      user_code?: string;
+      approve?: string;
+      email?: string;
+      subject?: string;
+      groups?: string;
+      tier?: string;
+    };
+    if (query.approve === "true" && query.user_code) {
+      const approved = appsSession.approveDeviceGrant(query.user_code, {
+        email: query.email,
+        subject: query.subject,
+        groups: query.groups ? query.groups.split(",").map((group) => group.trim()) : [],
+        tier: query.tier,
+      });
+      reply.type("text/html");
+      return approved ? "Device authorization approved." : "Unknown or expired device code.";
+    }
+    reply.type("text/html");
+    return "Submit the user_code to your organization's OIDC login flow.";
+  });
+
+  app.post("/oauth/token", async (request, reply) => {
+    if (!appsSession.enabled()) {
+      reply.code(404);
+      return { error: "apps compatible mode disabled" };
+    }
+    const body = request.body as {
+      grant_type?: string;
+      device_code?: string;
+      refresh_token?: string;
+    };
+    const result =
+      body.grant_type === "urn:ietf:params:oauth:grant-type:device_code" && body.device_code
+        ? appsSession.exchangeDeviceCode(body.device_code)
+        : body.grant_type === "refresh_token" && body.refresh_token
+          ? appsSession.refresh(body.refresh_token)
+          : { error: "unsupported_grant_type" };
+
+    if ("error" in result) {
+      reply.code(result.error === "authorization_pending" ? 400 : 401);
+      return result;
+    }
+    return result;
+  });
+
   app.post("/v1/messages", async (request, reply) => {
     const startedAt = Date.now();
     let gateway;
     try {
-      gateway = auth.authenticate(request);
+      gateway = appsSession.enabled() ? appsSession.authenticate(request) : auth.authenticate(request);
     } catch (error) {
       const statusCode = error instanceof AuthError ? error.status : 401;
       metrics.increment("llm_gateway_auth_denied_total", "Total denied authentication attempts", {
