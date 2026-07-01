@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 const envBoolean = z
@@ -95,6 +97,85 @@ const apiKeys = z
   })
   .refine((value) => value.length > 0, "At least one gateway API key is required");
 
+const stringArray = z.array(z.string().min(1)).default([]);
+
+const upstreamSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(["anthropic", "bedrock"]).default("anthropic"),
+  baseUrl: z.string().url().optional(),
+  apiKey: z.string().optional(),
+  region: z.string().optional(),
+  modelMap: z.record(z.string()).default({}),
+});
+
+const modelSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().optional(),
+  upstream: z.string().min(1).default("default"),
+  upstreamModel: z.string().optional(),
+});
+
+const managedPolicySchema = z.object({
+  name: z.string().min(1),
+  groups: stringArray,
+  emails: stringArray,
+  settings: z.record(z.unknown()).default({}),
+  availableModels: stringArray,
+  rateLimitTier: z.string().optional(),
+});
+
+const spendLimitSchema = z.object({
+  id: z.string().min(1),
+  scope: z.enum(["organization", "group", "user"]),
+  subject: z.string().optional(),
+  period: z.enum(["day", "week", "month"]),
+  amountUsd: z.coerce.number().nonnegative(),
+});
+
+const appsConfigSchema = z.object({
+  enabled: envBoolean.default(false),
+  externalUrl: z.string().url().optional(),
+  oidc: z
+    .object({
+      issuer: z.string().url().optional(),
+      clientId: z.string().optional(),
+      clientSecret: z.string().optional(),
+      redirectUri: z.string().url().optional(),
+      scopes: stringArray.default(["openid", "email", "profile"]),
+      groupClaim: z.string().default("groups"),
+      emailClaim: z.string().default("email"),
+    })
+    .default({}),
+  session: z
+    .object({
+      issuer: z.string().default("llm-gateway"),
+      audience: z.string().default("claude-code"),
+      jwtSecret: z.string().optional(),
+      accessTokenTtlSeconds: z.coerce.number().int().positive().default(3600),
+      refreshTokenTtlSeconds: z.coerce.number().int().positive().default(2592000),
+    })
+    .default({}),
+  store: z
+    .object({
+      postgresUrl: z.string().optional(),
+    })
+    .default({}),
+  admin: z
+    .object({
+      tokens: stringArray,
+    })
+    .default({ tokens: [] }),
+  upstreams: z.array(upstreamSchema).default([]),
+  models: z.array(modelSchema).default([]),
+  managedPolicies: z.array(managedPolicySchema).default([]),
+  spendLimits: z
+    .object({
+      failPolicy: z.enum(["open", "closed"]).default("closed"),
+      limits: z.array(spendLimitSchema).default([]),
+    })
+    .default({ failPolicy: "closed", limits: [] }),
+});
+
 const configSchema = z.object({
   nodeEnv: z.string().default("development"),
   host: z.string().default("0.0.0.0"),
@@ -123,12 +204,56 @@ const configSchema = z.object({
   refusalText: z
     .string()
     .default("This response was blocked by the organization's safety policy."),
+  apps: appsConfigSchema,
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
 export type GatewayApiKey = AppConfig["apiKeys"][number];
 
+function expandEnv(value: unknown, env: NodeJS.ProcessEnv): unknown {
+  if (typeof value === "string") {
+    return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, name: string) => env[name] ?? "");
+  }
+  if (Array.isArray(value)) return value.map((item) => expandEnv(item, env));
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, expandEnv(item, env)]),
+    );
+  }
+  return value;
+}
+
+function loadAppsConfig(env: NodeJS.ProcessEnv): unknown {
+  const configPath = env.APP_CONFIG_PATH;
+  if (!configPath) {
+    return {
+      enabled: env.APPS_COMPAT_ENABLED,
+      externalUrl: env.APPS_EXTERNAL_URL,
+      oidc: {
+        issuer: env.OIDC_ISSUER,
+        clientId: env.OIDC_CLIENT_ID,
+        clientSecret: env.OIDC_CLIENT_SECRET,
+        redirectUri: env.OIDC_REDIRECT_URI,
+      },
+      session: {
+        jwtSecret: env.SESSION_JWT_SECRET,
+      },
+      store: {
+        postgresUrl: env.POSTGRES_URL,
+      },
+      admin: {
+        tokens: env.ADMIN_TOKENS ? env.ADMIN_TOKENS.split(",").map((token) => token.trim()) : [],
+      },
+    };
+  }
+
+  const parsed = parseYaml(readFileSync(configPath, "utf8")) as Record<string, unknown>;
+  const expanded = expandEnv(parsed, env) as Record<string, unknown>;
+  return expanded.apps ?? expanded;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const apps = loadAppsConfig(env);
   return configSchema.parse({
     nodeEnv: env.NODE_ENV,
     host: env.HOST,
@@ -158,5 +283,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bedrockGuardrailId: env.BEDROCK_GUARDRAIL_ID,
     bedrockGuardrailVersion: env.BEDROCK_GUARDRAIL_VERSION,
     refusalText: env.REFUSAL_TEXT,
+    apps,
   });
 }

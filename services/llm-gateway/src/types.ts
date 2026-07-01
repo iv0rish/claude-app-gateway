@@ -1,5 +1,8 @@
 export type AuthenticatedGateway = {
   tier: string;
+  subject?: string;
+  email?: string;
+  groups?: string[];
 };
 
 export type AnthropicErrorType =
@@ -13,3 +16,28 @@ export type PolicyDecision = {
   reason: string;
 };
 
+export type UpstreamKind = "anthropic" | "bedrock";
+
+export type GatewayModel = {
+  id: string;
+  displayName?: string;
+  upstream: string;
+  upstreamModel?: string;
+};
+
+export type ManagedPolicy = {
+  name: string;
+  groups: string[];
+  emails: string[];
+  settings: Record<string, unknown>;
+  availableModels: string[];
+  rateLimitTier?: string;
+};
+
+export type SpendLimit = {
+  id: string;
+  scope: "organization" | "group" | "user";
+  subject?: string;
+  period: "day" | "week" | "month";
+  amountUsd: number;
+};

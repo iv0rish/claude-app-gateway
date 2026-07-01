@@ -15,9 +15,12 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.723.0",
     "@fastify/cors": "^10.0.1",
+    "@types/pg": "^8.20.0",
     "fastify": "^5.0.0",
     "ioredis": "^5.11.1",
+    "pg": "^8.22.0",
     "pino": "^9.5.0",
+    "yaml": "^2.9.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
