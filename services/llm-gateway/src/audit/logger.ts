@@ -5,6 +5,9 @@ export type AuditEvent = {
   tier?: string;
   model?: string;
   decision?: string;
+  subject?: string;
+  email?: string;
+  groups?: string[];
   statusCode?: number;
   latencyMs?: number;
   error?: string;
@@ -20,6 +23,9 @@ export function writeAudit(logger: FastifyBaseLogger, event: AuditEvent): void {
       tier: event.tier,
       model: event.model,
       decision: event.decision,
+      subject: event.subject,
+      email: event.email,
+      groups: event.groups,
       statusCode: event.statusCode,
       latencyMs: event.latencyMs,
       error: event.error,

@@ -10,6 +10,7 @@ import {
   upstreamRequestBody,
   type AnthropicMessagesRequest,
 } from "./anthropic/messages.js";
+import { AppsPolicyEngine } from "./apps/policy.js";
 import { AppsSessionService } from "./apps/session.js";
 import { writeAudit } from "./audit/logger.js";
 import { AuthError, createAuth, type AuthService } from "./auth/shared-secret.js";
@@ -132,6 +133,7 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
   const metrics = dependencies.metrics ?? createMetricsRegistry();
   const auth = dependencies.auth ?? createAuth(config.apiKeys);
   const appsSession = new AppsSessionService(config);
+  const appsPolicy = new AppsPolicyEngine(config);
   const limiter = dependencies.limiter ?? createRateLimiter(config);
   const guardrail = dependencies.guardrail ?? createGuardrailClient(config);
   const upstream = dependencies.upstream ?? new HttpUpstreamClient(config);
@@ -249,6 +251,74 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
     return result;
   });
 
+  app.get("/managed/settings", async (request, reply) => {
+    if (!appsSession.enabled()) {
+      reply.code(404);
+      return { error: "apps compatible mode disabled" };
+    }
+    try {
+      const gateway = appsSession.authenticate(request);
+      const policy = appsPolicy.resolve(gateway);
+      return {
+        settings: policy.settings,
+        availableModels: policy.availableModels,
+        policies: policy.policies,
+      };
+    } catch (error) {
+      reply.code(401);
+      return { error: error instanceof Error ? error.message : "authentication failed" };
+    }
+  });
+
+  app.get("/v1/models", async (request, reply) => {
+    if (!appsSession.enabled()) {
+      return {
+        data: config.apps.models.map((model) => ({
+          id: model.id,
+          type: "model",
+          display_name: model.displayName ?? model.id,
+        })),
+      };
+    }
+    try {
+      const gateway = appsSession.authenticate(request);
+      return {
+        data: appsPolicy.modelsFor(gateway).map((model) => ({
+          id: model.id,
+          type: "model",
+          display_name: model.displayName ?? model.id,
+        })),
+      };
+    } catch (error) {
+      reply.code(401);
+      return { error: error instanceof Error ? error.message : "authentication failed" };
+    }
+  });
+
+  app.post("/v1/messages/count_tokens", async (request, reply) => {
+    let gateway;
+    try {
+      gateway = appsSession.enabled() ? appsSession.authenticate(request) : auth.authenticate(request);
+    } catch (error) {
+      reply.code(401);
+      return createAnthropicError("authentication_error", "gateway authentication failed");
+    }
+    try {
+      const body = parseMessagesRequest(request.body);
+      if (appsSession.enabled()) appsPolicy.assertModelAllowed(gateway, body.model);
+      const input = extractInputText(body);
+      return {
+        input_tokens: Math.max(1, Math.ceil(input.length / 4)),
+      };
+    } catch (error) {
+      reply.code(error instanceof ZodError ? 400 : 403);
+      return createAnthropicError(
+        error instanceof ZodError ? "invalid_request_error" : "authentication_error",
+        error instanceof Error ? error.message : "count_tokens failed",
+      );
+    }
+  });
+
   app.post("/v1/messages", async (request, reply) => {
     const startedAt = Date.now();
     let gateway;
@@ -283,6 +353,33 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
         "invalid_request_error",
         error instanceof ZodError ? "invalid Anthropic Messages request" : "invalid request",
       );
+    }
+
+    try {
+      if (appsSession.enabled()) {
+        const policy = appsPolicy.assertModelAllowed(gateway, body.model);
+        gateway = {
+          ...gateway,
+          tier: policy.tier,
+        };
+      }
+    } catch (error) {
+      reply.code(403);
+      metrics.increment("llm_gateway_requests_total", "Total LLM gateway requests", {
+        tier: gateway.tier,
+        model: body.model,
+        status: "model_denied",
+      });
+      writeAudit(request.log, {
+        event: "model.denied",
+        tier: gateway.tier,
+        model: body.model,
+        subject: gateway.subject,
+        email: gateway.email,
+        decision: error instanceof Error ? error.message : "model denied",
+        statusCode: 403,
+      });
+      return createAnthropicError("authentication_error", "model is not available for this user");
     }
 
     let rateLimit;
