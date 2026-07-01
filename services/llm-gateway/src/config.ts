@@ -212,6 +212,10 @@ const configSchema = z.object({
 export type AppConfig = z.infer<typeof configSchema>;
 export type GatewayApiKey = AppConfig["apiKeys"][number];
 
+export function defaultAppsConfig(): AppConfig["apps"] {
+  return appsConfigSchema.parse({ enabled: false });
+}
+
 function expandEnv(value: unknown, env: NodeJS.ProcessEnv): unknown {
   if (typeof value === "string") {
     return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, name: string) => env[name] ?? "");

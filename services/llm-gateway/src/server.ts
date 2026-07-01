@@ -15,7 +15,7 @@ import { AppsSessionService } from "./apps/session.js";
 import { SpendLimitService } from "./apps/spend.js";
 import { writeAudit } from "./audit/logger.js";
 import { AuthError, createAuth, type AuthService } from "./auth/shared-secret.js";
-import { loadConfig, type AppConfig } from "./config.js";
+import { defaultAppsConfig, loadConfig, type AppConfig } from "./config.js";
 import {
   createGuardrailClient,
   type GuardrailClient,
@@ -130,7 +130,8 @@ async function applyGuardrail(
 }
 
 export async function buildServer(dependencies: ServerDependencies = {}): Promise<BuildServerResult> {
-  const config = dependencies.config ?? loadConfig();
+  const loadedConfig = dependencies.config ?? loadConfig();
+  const config = loadedConfig.apps ? loadedConfig : { ...loadedConfig, apps: defaultAppsConfig() };
   const metrics = dependencies.metrics ?? createMetricsRegistry();
   const auth = dependencies.auth ?? createAuth(config.apiKeys);
   const appsSession = new AppsSessionService(config);
