@@ -113,6 +113,8 @@ const modelSchema = z.object({
   displayName: z.string().optional(),
   upstream: z.string().min(1).default("default"),
   upstreamModel: z.string().optional(),
+  inputUsdPer1mTokens: z.coerce.number().nonnegative().default(0),
+  outputUsdPer1mTokens: z.coerce.number().nonnegative().default(0),
 });
 
 const managedPolicySchema = z.object({

@@ -12,6 +12,7 @@ import {
 } from "./anthropic/messages.js";
 import { AppsPolicyEngine } from "./apps/policy.js";
 import { AppsSessionService } from "./apps/session.js";
+import { SpendLimitService } from "./apps/spend.js";
 import { writeAudit } from "./audit/logger.js";
 import { AuthError, createAuth, type AuthService } from "./auth/shared-secret.js";
 import { loadConfig, type AppConfig } from "./config.js";
@@ -134,6 +135,7 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
   const auth = dependencies.auth ?? createAuth(config.apiKeys);
   const appsSession = new AppsSessionService(config);
   const appsPolicy = new AppsPolicyEngine(config);
+  const spendLimits = new SpendLimitService(config);
   const limiter = dependencies.limiter ?? createRateLimiter(config);
   const guardrail = dependencies.guardrail ?? createGuardrailClient(config);
   const upstream = dependencies.upstream ?? new HttpUpstreamClient(config);
@@ -319,6 +321,58 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
     }
   });
 
+  function requireAdmin(request: FastifyRequest): boolean {
+    const configured = new Set(config.apps.admin.tokens);
+    if (configured.size === 0) return false;
+    const header = request.headers.authorization;
+    const bearer = typeof header === "string" ? header.trim().split(/\s+/)[1] : undefined;
+    const adminToken = request.headers["x-admin-token"];
+    return (
+      (typeof bearer === "string" && configured.has(bearer)) ||
+      (typeof adminToken === "string" && configured.has(adminToken))
+    );
+  }
+
+  app.get("/v1/organizations/spend_limits", async (request, reply) => {
+    if (!requireAdmin(request)) {
+      reply.code(401);
+      return { error: "admin authentication required" };
+    }
+    return { data: spendLimits.listLimits() };
+  });
+
+  app.get("/v1/organizations/spend_limits/:id", async (request, reply) => {
+    if (!requireAdmin(request)) {
+      reply.code(401);
+      return { error: "admin authentication required" };
+    }
+    const params = request.params as { id: string };
+    const limit = spendLimits.listLimits().find((item) => item.id === params.id);
+    if (!limit) {
+      reply.code(404);
+      return { error: "spend limit not found" };
+    }
+    return limit;
+  });
+
+  app.get("/v1/organizations/spend_limits/effective", async (request, reply) => {
+    try {
+      const gateway = appsSession.authenticate(request);
+      return { data: spendLimits.effectiveLimits(gateway) };
+    } catch (error) {
+      reply.code(401);
+      return { error: error instanceof Error ? error.message : "authentication failed" };
+    }
+  });
+
+  app.get("/v1/organizations/spend_limits/audit", async (request, reply) => {
+    if (!requireAdmin(request)) {
+      reply.code(401);
+      return { error: "admin authentication required" };
+    }
+    return { data: spendLimits.auditEvents() };
+  });
+
   app.post("/v1/messages", async (request, reply) => {
     const startedAt = Date.now();
     let gateway;
@@ -449,6 +503,27 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
       kind: rateLimit.kind ?? "unknown",
     });
 
+    const spendDecision = spendLimits.check(gateway);
+    if (!spendDecision.allowed) {
+      reply.code(429);
+      metrics.increment("llm_gateway_requests_total", "Total LLM gateway requests", {
+        tier: gateway.tier,
+        model: body.model,
+        status: "spend_limited",
+      });
+      writeAudit(request.log, {
+        event: "spend_limited",
+        tier: gateway.tier,
+        model: body.model,
+        subject: gateway.subject,
+        email: gateway.email,
+        decision: spendDecision.reason,
+        statusCode: 429,
+        latencyMs: Date.now() - startedAt,
+      });
+      return createAnthropicError("rate_limit_error", "spend limit exceeded");
+    }
+
     try {
       const inputGuardrail = await applyGuardrail("INPUT", extractInputText(body), {
         config,
@@ -501,6 +576,16 @@ export async function buildServer(dependencies: ServerDependencies = {}): Promis
         });
         return createRefusalResponse(body.model, outputGuardrail.outputs[0] ?? config.refusalText);
       }
+
+      const spendEvent = spendLimits.record(gateway, appsPolicy.modelById(body.model), response);
+      writeAudit(request.log, {
+        event: "spend.recorded",
+        tier: gateway.tier,
+        model: body.model,
+        subject: gateway.subject,
+        email: gateway.email,
+        decision: spendEvent.costUsd.toFixed(8),
+      });
 
       metrics.increment("llm_gateway_requests_total", "Total LLM gateway requests", {
         tier: gateway.tier,

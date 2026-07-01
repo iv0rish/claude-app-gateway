@@ -23,6 +23,8 @@ export type GatewayModel = {
   displayName?: string;
   upstream: string;
   upstreamModel?: string;
+  inputUsdPer1mTokens?: number;
+  outputUsdPer1mTokens?: number;
 };
 
 export type ManagedPolicy = {
