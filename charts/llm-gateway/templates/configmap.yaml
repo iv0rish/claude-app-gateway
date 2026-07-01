@@ -6,6 +6,11 @@ metadata:
   labels:
     {{- include "llm-gateway.labels" . | nindent 4 }}
 data:
+  {{- with .Values.config.appConfigPath }}
+  APP_CONFIG_PATH: {{ . | quote }}
+  {{- end }}
+  HOST: "0.0.0.0"
+  PORT: {{ .Values.service.port | quote }}
   UPSTREAM_BASE_URL: {{ .Values.config.upstreamBaseUrl | quote }}
   {{- with .Values.config.redisUrl }}
   REDIS_URL: {{ . | quote }}
@@ -33,3 +38,76 @@ data:
   BEDROCK_GUARDRAIL_VERSION: {{ . | quote }}
   {{- end }}
   REFUSAL_TEXT: {{ .Values.config.refusalText | quote }}
+  APPS_COMPAT_ENABLED: {{ .Values.config.appsCompatEnabled | quote }}
+  APPS_EXTERNAL_URL: {{ .Values.config.publicUrl | quote }}
+  OIDC_ISSUER: {{ .Values.config.oidc.issuer | quote }}
+  OIDC_CLIENT_ID: {{ .Values.config.oidc.clientId | quote }}
+  OIDC_REDIRECT_URI: {{ .Values.config.oidc.redirectUri | quote }}
+  OIDC_SCOPES: {{ toJson .Values.config.oidc.scopes | quote }}
+  OIDC_GROUP_CLAIM: {{ .Values.config.oidc.groupClaim | quote }}
+  OIDC_EMAIL_CLAIM: {{ .Values.config.oidc.emailClaim | quote }}
+  SESSION_ISSUER: {{ .Values.config.session.issuer | quote }}
+  SESSION_AUDIENCE: {{ .Values.config.session.audience | quote }}
+  SESSION_ACCESS_TOKEN_TTL_SECONDS: {{ .Values.config.session.accessTokenTtlSeconds | int | quote }}
+  SESSION_REFRESH_TOKEN_TTL_SECONDS: {{ .Values.config.session.refreshTokenTtlSeconds | int | quote }}
+  MANAGED_POLICIES: {{ toJson .Values.config.managedPolicies | quote }}
+  SPEND_LIMITS: {{ toJson .Values.config.spendLimits.limits | quote }}
+  gateway.yaml: |
+    enabled: {{ .Values.config.appsCompatEnabled }}
+    externalUrl: {{ .Values.config.publicUrl | quote }}
+    oidc:
+      issuer: {{ .Values.config.oidc.issuer | quote }}
+      clientId: {{ .Values.config.oidc.clientId | quote }}
+      clientSecret: ${OIDC_CLIENT_SECRET}
+      redirectUri: {{ .Values.config.oidc.redirectUri | quote }}
+      scopes:
+        {{- toYaml .Values.config.oidc.scopes | nindent 8 }}
+      groupClaim: {{ .Values.config.oidc.groupClaim | quote }}
+      emailClaim: {{ .Values.config.oidc.emailClaim | quote }}
+
+    session:
+      issuer: {{ .Values.config.session.issuer | quote }}
+      audience: {{ .Values.config.session.audience | quote }}
+      jwtSecret: ${SESSION_JWT_SECRET}
+      accessTokenTtlSeconds: {{ .Values.config.session.accessTokenTtlSeconds | int }}
+      refreshTokenTtlSeconds: {{ .Values.config.session.refreshTokenTtlSeconds | int }}
+
+    store:
+      postgresUrl: ${POSTGRES_URL}
+
+    admin:
+      tokens:
+        - ${ADMIN_TOKEN}
+
+    upstreams:
+      {{- range .Values.config.upstreams.anthropicCompatible }}
+      - name: {{ .name | quote }}
+        type: {{ .type | quote }}
+        baseUrl: {{ .baseUrl | quote }}
+        apiKey: {{ printf "${%s}" .apiKeyEnv | quote }}
+      {{- end }}
+      {{- if .Values.config.upstreams.bedrockNative.enabled }}
+      - name: {{ .Values.config.upstreams.bedrockNative.name | quote }}
+        type: {{ .Values.config.upstreams.bedrockNative.type | quote }}
+        region: {{ .Values.config.upstreams.bedrockNative.region | quote }}
+        modelMap:
+          default: {{ .Values.config.upstreams.bedrockNative.modelId | quote }}
+      {{- end }}
+
+    models:
+      {{- range .Values.config.models }}
+      - id: {{ .id | quote }}
+        displayName: {{ .displayName | quote }}
+        upstream: {{ .upstream | quote }}
+        upstreamModel: {{ .upstreamModel | quote }}
+        inputUsdPer1mTokens: {{ .inputUsdPer1mTokens }}
+        outputUsdPer1mTokens: {{ .outputUsdPer1mTokens }}
+      {{- end }}
+
+    managedPolicies:
+      {{- toYaml .Values.config.managedPolicies | nindent 6 }}
+
+    spendLimits:
+      failPolicy: {{ .Values.config.spendLimits.failPolicy | quote }}
+      limits:
+        {{- toYaml .Values.config.spendLimits.limits | nindent 8 }}

@@ -1,6 +1,6 @@
 # Authentication
 
-`llm-gateway`는 Apps Gateway에서 오는 요청만 받아야 한다. 이를 위해 shared secret을 검증한다.
+기존 proxy mode의 `llm-gateway`는 Apps Gateway에서 오는 요청만 받아야 한다. 이를 위해 shared secret을 검증한다. Apps-compatible mode에서는 사용자 로그인은 OIDC/session layer가 담당하고, upstream/proxy tier 분리는 별도 shared secret으로 유지할 수 있다.
 
 ## 지원 Header
 
@@ -30,6 +30,7 @@ Apps Gateway의 `upstreams[].auth.api_key` 값이 proxy의 `GATEWAY_API_KEYS` �
 - 인증 실패 요청은 upstream으로 전달하지 않는다.
 - shared secret은 log에 남기지 않는다.
 - Apps Gateway 외부에서 `llm-gateway`로 직접 접근하지 못하도록 NetworkPolicy로 제한한다.
+- Apps-compatible deployment에서는 external ingress가 필요하므로 OIDC, session JWT, Postgres, admin token 설정을 반드시 활성화하고 admin surface는 운영자 네트워크로 제한한다.
 
 ## 실패 응답
 
@@ -37,4 +38,3 @@ Apps Gateway의 `upstreams[].auth.api_key` 값이 proxy의 `GATEWAY_API_KEYS` �
 | --- | --- | --- |
 | key 누락 | `401` | `authentication_error` |
 | key 불일치 | `403` | `invalid_request_error` |
-

@@ -240,9 +240,16 @@ function loadAppsConfig(env: NodeJS.ProcessEnv): unknown {
         clientId: env.OIDC_CLIENT_ID,
         clientSecret: env.OIDC_CLIENT_SECRET,
         redirectUri: env.OIDC_REDIRECT_URI,
+        scopes: env.OIDC_SCOPES ? JSON.parse(env.OIDC_SCOPES) : undefined,
+        groupClaim: env.OIDC_GROUP_CLAIM,
+        emailClaim: env.OIDC_EMAIL_CLAIM,
       },
       session: {
+        issuer: env.SESSION_ISSUER,
+        audience: env.SESSION_AUDIENCE,
         jwtSecret: env.SESSION_JWT_SECRET,
+        accessTokenTtlSeconds: env.SESSION_ACCESS_TOKEN_TTL_SECONDS,
+        refreshTokenTtlSeconds: env.SESSION_REFRESH_TOKEN_TTL_SECONDS,
       },
       store: {
         postgresUrl: env.POSTGRES_URL,

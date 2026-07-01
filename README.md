@@ -48,7 +48,7 @@ docs/
 
 ### LLM Gateway
 
-`services/llm-gateway`는 Apps Gateway의 Anthropic upstream 뒤쪽에서 동작한다.
+`services/llm-gateway`는 Apps Gateway의 Anthropic upstream 뒤쪽에서 동작한다. Apps-compatible packaging에서는 같은 chart가 `APP_CONFIG_PATH` 기반 Gateway config, OIDC/session/Postgres, managed model policy, spend limits, ingress, and Bedrock native upstream settings를 렌더링한다.
 
 주요 기능:
 
@@ -61,6 +61,7 @@ docs/
 - Bedrock `ApplyGuardrail` input/output 검사.
 - output 차단 시 refusal replacement.
 - vLLM/Anthropic-compatible upstream forwarding.
+- apps-compatible Helm config for OIDC/session, managed policy, spend limits, and Bedrock native upstream.
 - Prometheus metrics와 audit log.
 
 문서: [docs/llm-gateway/README.md](./docs/llm-gateway/README.md)
@@ -91,7 +92,7 @@ Claude Apps Gateway binary 자체는 이 repo에서 구현하지 않는다. 이 
 - [docs/apps-gateway-packaging.md](./docs/apps-gateway-packaging.md)
 - [docs/apps-gateway-upstream-proxy.md](./docs/apps-gateway-upstream-proxy.md)
 
-Apps Gateway upstream은 `llm-gateway`를 바라본다.
+기존 split deployment에서는 Apps Gateway upstream이 `llm-gateway`를 바라본다.
 
 ```yaml
 upstreams:
@@ -161,6 +162,8 @@ helm upgrade --install claude-apps-gateway charts/apps-gateway \
 
 Environment-specific values must provide real IdP, Redis, Bedrock, vLLM, Postgres, image, and secret settings.
 
+For apps-compatible `llm-gateway` deployment, enable `charts/llm-gateway` ingress and set `config.appConfigPath`, `config.oidc`, `config.upstreams`, `config.models`, `config.managedPolicies`, `config.spendLimits`, and the matching `secrets.*` values.
+
 ## Security Notes
 
 - Apps Gateway should not egress directly to external Anthropic API when internal vLLM is required.
@@ -173,4 +176,3 @@ Environment-specific values must provide real IdP, Redis, Bedrock, vLLM, Postgre
 ## Progress Log
 
 Implementation progress is recorded in [docs/progress/](./docs/progress/).
-

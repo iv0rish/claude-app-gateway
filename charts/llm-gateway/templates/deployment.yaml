@@ -52,6 +52,13 @@ spec:
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/llm-gateway
+              readOnly: true
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz
@@ -64,4 +71,13 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-
+      volumes:
+        - name: app-config
+          configMap:
+            name: {{ include "llm-gateway.fullname" . }}-config
+            items:
+              - key: gateway.yaml
+                path: gateway.yaml
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

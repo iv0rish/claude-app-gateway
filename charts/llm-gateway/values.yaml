@@ -36,6 +36,21 @@ securityContext:
 service:
   type: ClusterIP
   port: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+  hosts:
+    - host: llm-gateway.internal.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
 
 resources:
   requests:
@@ -47,8 +62,15 @@ resources:
 
 extraEnv: []
 extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
 
 config:
+  appConfigPath: /etc/llm-gateway/gateway.yaml
+  appsCompatEnabled: true
+  publicUrl: https://llm-gateway.internal.example.com
+  trustedProxies:
+    - 10.0.0.0/8
   upstreamBaseUrl: http://vllm.vllm.svc.cluster.local:8000
   redisUrl: ""
   logLevel: info
@@ -68,6 +90,64 @@ config:
   bedrockGuardrailId: replace-me
   bedrockGuardrailVersion: DRAFT
   refusalText: "This response was blocked by the organization's safety policy."
+  oidc:
+    issuer: https://login.example.com
+    clientId: llm-gateway
+    redirectUri: https://llm-gateway.internal.example.com/oauth/callback
+    scopes:
+      - openid
+      - email
+      - profile
+    groupClaim: groups
+    emailClaim: email
+  session:
+    issuer: llm-gateway
+    audience: claude-code
+    accessTokenTtlSeconds: 3600
+    refreshTokenTtlSeconds: 2592000
+  managedPolicies:
+    - name: default
+      groups: []
+      emails: []
+      settings:
+        cli:
+          availableModels:
+            - claude-sonnet-4-6
+          enforceAvailableModels: true
+          permissions:
+            deny:
+              - "WebFetch"
+          env:
+            DISABLE_UPDATES: "1"
+      availableModels:
+        - claude-sonnet-4-6
+      rateLimitTier: standard
+  spendLimits:
+    failPolicy: closed
+    limits:
+      - id: org-monthly
+        scope: organization
+        period: month
+        amountUsd: 1000
+  models:
+    - id: claude-sonnet-4-6
+      displayName: Internal vLLM Sonnet
+      upstream: vllm-standard
+      upstreamModel: my-model
+      inputUsdPer1mTokens: 3
+      outputUsdPer1mTokens: 15
+  upstreams:
+    anthropicCompatible:
+      - name: vllm-standard
+        type: anthropic
+        baseUrl: http://vllm.vllm.svc.cluster.local:8000
+        apiKeyEnv: VLLM_STANDARD_KEY
+    bedrockNative:
+      enabled: false
+      name: bedrock-claude
+      type: bedrock
+      region: us-east-1
+      modelId: anthropic.claude-3-5-sonnet-20241022-v2:0
 
 secrets:
   create: true
@@ -76,6 +156,12 @@ secrets:
     - key: replace-me
       tier: standard
   upstreamApiKey: ""
+  oidcClientSecret: "replace-me"
+  sessionJwtSecret: "replace-me"
+  adminToken: "replace-me"
+  postgresUrl: "postgres://user:password@postgres.example.com:5432/llm_gateway?sslmode=require"
+  vllmStandardKey: "replace-me"
+  stringData: {}
 
 networkPolicy:
   enabled: true

@@ -1,23 +1,28 @@
 # LLM Gateway
 
-`llm-gateway`는 Claude Apps Gateway 뒤에서 Anthropic-compatible `/v1/messages` 요청을 받아 rate limit, Bedrock Guardrails, upstream forwarding을 적용하는 내부 service다.
+`llm-gateway`는 Claude Apps Gateway 뒤에서 Anthropic-compatible `/v1/messages` 요청을 받아 rate limit, Bedrock Guardrails, upstream forwarding을 적용하는 내부 service다. Apps-compatible mode에서는 OIDC login, session, managed model policy, spend limit까지 담당하는 client-facing Gateway로 패키징할 수 있다.
 
 ```text
 Claude Code
-  -> Claude Apps Gateway
-  -> llm-gateway
+  -> Claude Apps Gateway or llm-gateway apps-compatible runtime
+  -> llm-gateway policy path
      -> Redis optional
      -> Bedrock Runtime ApplyGuardrail
-     -> vLLM or another Anthropic-compatible upstream
+     -> vLLM, another Anthropic-compatible upstream, or Bedrock native upstream
 ```
 
-Apps Gateway는 OIDC 로그인, session, spend limit, model allowlist를 담당한다. `llm-gateway`는 추론 요청의 정책 집행 지점이다.
+기존 proxy mode에서는 Apps Gateway가 OIDC 로그인, session, spend limit, model allowlist를 담당한다. Apps-compatible mode에서는 `llm-gateway`가 그 역할을 직접 수행하고 `APP_CONFIG_PATH`의 `gateway.yaml`을 읽는다.
 
 ## 문서 구조
 
 | 문서 | 내용 |
 | --- | --- |
 | [configuration.md](./configuration.md) | 환경 변수, secret, Helm values |
+| [apps-compatible-deployment.md](./apps-compatible-deployment.md) | `APP_CONFIG_PATH`, ingress, app config 배포 |
+| [oidc-session.md](./oidc-session.md) | OIDC login, session JWT, Postgres store, admin token |
+| [managed-settings-model-policy.md](./managed-settings-model-policy.md) | Claude Code managed settings, model catalog, managed policies |
+| [spend-limits.md](./spend-limits.md) | organization/group/user spend limits |
+| [bedrock-native-upstream.md](./bedrock-native-upstream.md) | Bedrock native model upstream |
 | [request-flow.md](./request-flow.md) | `/v1/messages` 처리 순서와 오류 응답 |
 | [authentication.md](./authentication.md) | Apps Gateway shared secret 검증 |
 | [rate-limiting.md](./rate-limiting.md) | in-memory/Redis rate limit |
@@ -50,8 +55,23 @@ Apps Gateway는 OIDC 로그인, session, spend limit, model allowlist를 담당�
 - audit log와 Prometheus metrics.
 - Dockerfile과 Helm chart.
 
+## Apps-Compatible Packaging
+
+Helm chart는 기존 proxy env를 유지하면서 다음 app Gateway 설정도 렌더링한다.
+
+- `APP_CONFIG_PATH=/etc/llm-gateway/gateway.yaml`
+- OIDC issuer/client/domain/group settings.
+- Postgres store settings.
+- session JWT secret reference.
+- admin token reference.
+- managed model policies.
+- spend limits.
+- Anthropic-compatible upstreams and optional Bedrock native upstream.
+- optional Kubernetes Ingress.
+
 ## 현재 한계
 
+- Apps-compatible API surface는 `APP_CONFIG_PATH` config를 읽는 runtime path에 의존한다. 기존 `/v1/messages` proxy env는 backward compatibility를 위해 계속 렌더링된다.
 - token policy는 `max_tokens` reservation 기반으로 구현되어 있다. upstream 응답의 실제 usage로 사후 보정하는 settlement는 아직 없다.
 - SSE streaming passthrough는 제공하지 않는다. output guardrail을 강제하기 위해 strict buffering 방식을 사용한다.
 - Bedrock Guardrail retry/backoff와 circuit breaker는 아직 없다.

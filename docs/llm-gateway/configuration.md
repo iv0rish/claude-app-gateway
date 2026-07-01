@@ -1,6 +1,6 @@
 # Configuration
 
-`llm-gateway`는 환경 변수로 설정된다. Helm chart는 ConfigMap과 Secret으로 값을 주입한다.
+`llm-gateway` proxy path는 환경 변수로 설정된다. Apps-compatible runtime은 `APP_CONFIG_PATH`가 가리키는 YAML config file을 읽는다. Helm chart는 두 surface를 모두 렌더링해 기존 env 기반 배포와 apps-compatible 배포를 같이 지원한다.
 
 ## Server
 
@@ -10,6 +10,41 @@
 | `PORT` | `8080` | listen port |
 | `LOG_LEVEL` | `info` | Pino log level |
 | `METRICS_ENABLED` | `true` | `/metrics` endpoint 활성화 |
+| `APP_CONFIG_PATH` | `/etc/llm-gateway/gateway.yaml` | apps-compatible runtime config path |
+
+## Apps-Compatible Config
+
+Helm chart는 ConfigMap에 `gateway.yaml`을 만들고 Deployment에 `/etc/llm-gateway/gateway.yaml`로 mount한다.
+
+```yaml
+listen:
+  host: 0.0.0.0
+  port: 8080
+  public_url: https://llm-gateway.internal.example.com
+
+oidc:
+  issuer: https://login.example.com
+  clientId: llm-gateway
+  clientSecret: ${OIDC_CLIENT_SECRET}
+  redirectUri: https://llm-gateway.internal.example.com/oauth/callback
+
+session:
+  jwtSecret: ${SESSION_JWT_SECRET}
+  accessTokenTtlSeconds: 3600
+  refreshTokenTtlSeconds: 2592000
+
+store:
+  postgresUrl: ${POSTGRES_URL}
+```
+
+Secret keys:
+
+| Key | 설명 |
+| --- | --- |
+| `OIDC_CLIENT_SECRET` | OIDC client secret |
+| `SESSION_JWT_SECRET` | session JWT signing secret |
+| `POSTGRES_URL` | Postgres store URL |
+| `ADMIN_TOKEN` or `ADMIN_TOKENS` | admin/bootstrap API token |
 
 ## Apps Gateway 인증
 
@@ -40,6 +75,24 @@ Apps Gateway upstream별 `auth.api_key` 값을 다르게 두면 tier별 rate lim
 | `UPSTREAM_TIMEOUT_MS` | `120000` | upstream request timeout |
 
 `UPSTREAM_API_KEY`가 있으면 upstream 요청에 `x-api-key`로 전달된다. client의 `Authorization`, `Cookie`, `x-api-key`는 upstream으로 전달하지 않는다.
+
+Apps-compatible config는 `config.upstreams`에서 Anthropic-compatible upstream과 Bedrock native upstream을 렌더링한다.
+
+```yaml
+config:
+  upstreams:
+    anthropicCompatible:
+      - name: vllm-standard
+        type: anthropic
+        baseUrl: http://vllm.vllm.svc.cluster.local:8000
+        apiKeyEnv: VLLM_STANDARD_KEY
+    bedrockNative:
+      enabled: false
+      name: bedrock-claude
+      type: bedrock
+      region: us-east-1
+      modelId: anthropic.claude-3-5-sonnet-20241022-v2:0
+```
 
 ## Rate Limit
 
@@ -107,10 +160,40 @@ config:
   bedrockRegion: us-east-1
   bedrockGuardrailId: gr-xxxxxxxx
   bedrockGuardrailVersion: "1"
+  oidc:
+    issuer: https://login.example.com
+    clientId: llm-gateway
+    redirectUri: https://llm-gateway.internal.example.com/oauth/callback
+  session:
+    accessTokenTtlSeconds: 3600
+    refreshTokenTtlSeconds: 2592000
+  managedPolicies:
+    - name: default
+      groups: []
+      emails: []
+      settings:
+        cli:
+          availableModels:
+            - claude-sonnet-4-6
+          enforceAvailableModels: true
+      availableModels:
+        - claude-sonnet-4-6
+  spendLimits:
+    failPolicy: closed
+    limits:
+      - id: org-monthly
+        scope: organization
+        period: month
+        amountUsd: 1000
 
 secrets:
   gatewayApiKeys:
     - key: replace-me
       tier: standard
   upstreamApiKey: ""
+  oidcClientSecret: replace-me
+  sessionJwtSecret: replace-me
+  adminToken: replace-me
+  postgresUrl: postgres://user:password@postgres.example.com:5432/llm_gateway?sslmode=require
+  vllmStandardKey: replace-me
 ```
